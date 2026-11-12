@@ -107,8 +107,10 @@ def main():
     current = TOOLS.paths()
     sdk = (args.sdk_root or current['sdk']).expanduser().absolute()
     jdk = current['jdk']
-    if not current['host_clang'].is_file() or not Path('/usr/bin/openssl').is_file():
-        parser.error('Install the host clang compiler and OpenSSL before downloading Android tools.')
+    try:
+        TOOLS.require_host_programs(current['host_clang'])
+    except ValueError as error:
+        parser.error(str(error))
     if not (jdk / 'javac').is_file():
         parser.error('Install JDK 17 or newer, then set JAVA_HOME to that JDK.')
     probe = subprocess.run([str(jdk / 'javac'), '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
