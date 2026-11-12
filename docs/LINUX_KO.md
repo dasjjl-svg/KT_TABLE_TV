@@ -8,7 +8,7 @@ Ubuntu 24.04 LTS 계열 **x86_64 PC**에서 패널 서버·Android 앱 빌드·�
 
 ```sh
 sudo apt update
-sudo apt install git ca-certificates curl python3 openjdk-17-jdk clang libclang-rt-dev openssl unzip zip
+sudo apt install git ca-certificates curl python3 openjdk-17-jdk clang libclang-rt-dev ksh openssl unzip zip
 ```
 
 [Node.js 공식 다운로드](https://nodejs.org/en/download)에서 Linux x64용 **22.12 이상 지원 중인 LTS**를 설치합니다. 배포판의 기본 `nodejs`가 요구 버전보다 오래된 경우 그대로 사용하지 않습니다. Node는 `npm`과 함께 같은 사용자 환경의 PATH에 있어야 합니다.
@@ -20,6 +20,7 @@ npm --version
 python3 --version
 javac -version
 clang --version
+ksh -c 'printf "ksh ready\n"'
 ```
 
 Python 3.10 이상, JDK 17 이상을 사용합니다. Home Assistant는 기존 서버를 연결하거나 [HA 공식 Linux 설치 안내](https://www.home-assistant.io/installation/linux/)의 HA OS 가상 머신 또는 Container 구성을 별도로 준비합니다. 이 설치 도우미는 HA·Docker·가상 머신을 자동 설치하지 않습니다. 센서와 계정 연결은 [HA 연동 안내](HOME_ASSISTANT_KO.md)를 참고합니다.
@@ -85,6 +86,7 @@ python3 scripts/linux-service.py status
 | 파일 권한 오류 | 일반 사용자 소유의 Linux 파일시스템인지, sudo로 만든 파일이나 Windows 공유 경로인지 |
 | SDK 호스트 미지원 | `uname -m`이 x86_64인지; Linux ARM64용 Android 빌드는 제공하지 않음 |
 | JDK를 찾지 못함 | `javac`가 JDK 17 이상인지, `JAVA_HOME`이 오래된 다른 OS 경로인지 |
+| ksh를 찾지 못함 | `sudo apt install ksh`로 Android 셸 명령 검사용 Korn shell 설치 |
 | clang/sanitizer 오류 | clang과 libclang-rt-dev 패키지 설치 여부 |
 | 자동 실행에서 Node를 못 찾음 | 설치 때와 같은 사용자·Node 경로인지. Node 설치 위치 변경 후 서비스 재등록 |
 

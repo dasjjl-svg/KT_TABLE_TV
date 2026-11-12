@@ -175,8 +175,27 @@ class HostToolchainTests(unittest.TestCase):
                 paths = T.TOOLS.paths()
                 self.assertEqual(paths['jdk'], root / 'jdk/bin')
                 self.assertEqual(paths['native'], root / 'ndk/toolchains/llvm/prebuilt/linux-x86_64/bin')
-                with self.assertRaisesRegex(ValueError, 'Android tools missing'):
+                with mock.patch.object(T.TOOLS, 'require_host_programs'), self.assertRaisesRegex(ValueError, 'Android tools missing'):
                     T.TOOLS.paths(required=True)
+
+    def test_missing_ksh_fails_before_any_shell_or_download_runs(self):
+        with mock.patch.object(Path, 'is_file', lambda path: path != Path('/bin/ksh')), \
+                mock.patch.object(T.TOOLS.os, 'access', return_value=True), mock.patch.object(T.TOOLS.subprocess, 'run') as command:
+            with self.assertRaisesRegex(ValueError, 'Install ksh'):
+                T.TOOLS.require_host_programs(Path('/usr/bin/clang'))
+            command.assert_not_called()
+
+    def test_ksh_requires_android_compatible_print_behavior(self):
+        with mock.patch.object(Path, 'is_file', return_value=True), mock.patch.object(T.TOOLS.os, 'access', return_value=True), \
+                mock.patch.object(T.TOOLS.subprocess, 'run') as command:
+            command.return_value = subprocess.CompletedProcess([], 0, b'home-panel-shell-check', b'')
+            T.TOOLS.require_host_programs(Path('/usr/bin/clang'))
+            self.assertEqual(command.call_args[0][0], ['/bin/ksh', '-c', 'print -rn -- home-panel-shell-check'])
+            for result in (subprocess.CompletedProcess([], 127, b'', b''),
+                           subprocess.CompletedProcess([], 0, b'home-panel-shell-check\n', b'')):
+                command.return_value = result
+                with self.subTest(result=result), self.assertRaisesRegex(ValueError, 'working /bin/ksh'):
+                    T.TOOLS.require_host_programs(Path('/usr/bin/clang'))
 
 
 if __name__ == '__main__':

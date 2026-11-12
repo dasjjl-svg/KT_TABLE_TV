@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +31,17 @@ def find_jdk():
     if platform.system() == 'Linux':
         candidate = candidate.resolve()
     return candidate.parent
+
+
+def require_host_programs(host_clang):
+    required = {'clang': host_clang, 'OpenSSL': Path('/usr/bin/openssl'), 'ksh': Path('/bin/ksh')}
+    for name, path in required.items():
+        if not path.is_file() or not os.access(path, os.X_OK):
+            raise ValueError('Install ' + name + ' before building Android apps. Linux/WSL: sudo apt install clang openssl ksh')
+    probe = subprocess.run(['/bin/ksh', '-c', 'print -rn -- home-panel-shell-check'],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+    if probe.returncode or probe.stdout != b'home-panel-shell-check' or probe.stderr:
+        raise ValueError('A working /bin/ksh with print -rn support is required for Android shell compatibility tests.')
 
 
 def settings():
@@ -63,6 +75,7 @@ def paths(required=False):
     result = {'sdk': sdk, 'jdk': jdk, 'tools': tools, 'jar': jar, 'd8': d8, 'signer': signer, 'ndk': ndk,
               'native': native, 'host_clang': host_clang}
     if required:
+        require_host_programs(host_clang)
         required_files = [jdk / name for name in ('java', 'javac', 'keytool')]
         required_files += [tools / 'aapt', tools / 'zipalign', jar, d8, signer, host_clang, Path('/usr/bin/openssl')]
         required_files += [native / name for name in ('clang', 'llvm-readelf', 'llvm-objdump')]

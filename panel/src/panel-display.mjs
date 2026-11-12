@@ -18,8 +18,8 @@ export function installWakeShield(target, onWake, { schedule = setTimeout, cance
     if (stopped) return;
     stopped = true;
     if (timer !== null) cancel(timer);
-    for (const type of events) target.removeEventListener(type, intercept, true);
-    target.removeEventListener('blur', reset, true);
+    for (const type of events) target.removeEventListener(type, intercept, { capture: true });
+    target.removeEventListener('blur', reset, { capture: true });
   }
   function reset() {
     held.clear();
