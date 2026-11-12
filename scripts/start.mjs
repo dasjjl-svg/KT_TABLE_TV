@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSetup } from '../panel/server/config.mjs';
+import { checkHost } from './host-check.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const children = new Set(), timers = new Set();
@@ -38,10 +39,11 @@ function stop() {
 }
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, stop);
 try {
+  checkHost(root);
   await loadSetup(join(root, 'runtime/setup.json'));
   await access(join(root, 'panel/dist/index.html'));
   start('Home Assistant 패널', process.execPath, ['panel/server/index.mjs']);
   start('CT1105-SB 화면', process.execPath, ['panel/server/legacy.mjs']);
   try { await access(join(root, 'runtime/panel-maintenance/config.json')); start('기기 관리 연결', 'python3', ['hardware/panel_maintenance_server.py', 'serve', '--lifetime', '604800']); } catch {}
   console.log('http://localhost:4173 · 종료하려면 Ctrl+C를 누르세요.');
-} catch { console.error('먼저 Setup.command를 실행해 설정과 웹 빌드를 완료하세요.'); process.exitCode = 1; }
+} catch (error) { console.error(error.code === 'ENOENT' ? '먼저 Setup.command 또는 Setup.sh로 설정과 웹 빌드를 완료하세요.' : error.message); process.exitCode = 1; }

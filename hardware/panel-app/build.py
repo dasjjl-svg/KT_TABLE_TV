@@ -161,7 +161,7 @@ def build_native():
     directory.mkdir(mode=0o700, exist_ok=True)
     output = directory / 'libhome_panel_spi.so'
     native_test = directory / 'spi_identity_test'
-    run(['/usr/bin/clang', '-std=c11', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
+    run([PATHS['host_clang'], '-std=c11', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
          '-fsanitize=address,undefined', '-fno-omit-frame-pointer',
          APP / 'native/tests/spi_identity_test.c', '-o', native_test])
     run([native_test])

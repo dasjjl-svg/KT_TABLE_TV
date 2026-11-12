@@ -27,7 +27,7 @@ export async function loadLegacyNetwork(path) {
   let before;
   try { before = await lstat(path); }
   catch (error) {
-    if (error.code === 'ENOENT') throw new Error('Run Setup.command first.');
+    if (error.code === 'ENOENT') throw new Error('Run the setup launcher for your operating system first.');
     throw failure();
   }
   let handle;

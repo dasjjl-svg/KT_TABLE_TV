@@ -72,7 +72,7 @@ export async function createPanelServer(config, { ha: injectedHa, runtime = join
       if (req.method === 'GET' && path === '/api/dashboard') {
         let error = null, available = false, view = last || { rooms: config.rooms.map(room => ({ id: room.id, name: room.name, temperature: null, humidity: null, co2: null })), devices: [], scenes: [], integrations: [] };
         if (ha.connected) try { view = await dashboard(); available = true; } catch { error = 'Home Assistant에 연결하지 못했습니다.'; }
-        else error = 'Mac에서 Home Assistant 연결을 완료하세요.';
+        else error = '서버에서 Home Assistant 연결을 완료하세요.';
         if (!available) await features.observe(null, { reliable: false });
         return json(res, 200, { ...view, ...features.snapshot(available ? view : null), roomConfig: config.rooms, mode: available ? 'live' : 'unavailable', connected: ha.connected, serverReachable: available, error, csrfToken: csrf, weekly: available ? weekly.snapshot(view, { co2Threshold: features.settings().co2Threshold }) : null, maintenance: await maintenance.snapshot() });
       }

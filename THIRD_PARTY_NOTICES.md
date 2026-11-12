@@ -13,3 +13,5 @@
 - [SonoffLAN](https://github.com/AlexxIT/SonoffLAN): 선택적인 별도 커스텀 통합. 소스나 계정 데이터를 이 저장소에 재배포하지 않습니다.
 
 KT APK, 제조사 라이브러리, eMMC/SPI 펌웨어 이미지, 기기별 인증 저장소, 개인용 APK는 포함하지 않습니다. 재사용하는 기기의 순정 시스템과 외부 소프트웨어에 대한 권리는 이 라이선스가 부여하지 않습니다.
+
+Windows 실행 경로는 [Microsoft WSL2](https://learn.microsoft.com/windows/wsl/)를 사용합니다. Linux 자동 실행은 선택적으로 systemd 사용자 서비스를 사용하며, 이 저장소는 WSL 또는 systemd 자체를 배포하지 않습니다.

@@ -69,7 +69,7 @@ export default function App() {
   return <div className="app-shell" ref={shell}>
     <aside className="sidebar"><div className="header-clock"><time>{time(now.toISOString())}</time><span>{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' }).format(now)}</span></div><nav className="room-nav" aria-label="방 선택">{[{ id: 'all', name: '전체' }, ...rooms].map(item => <button key={item.id} className={'nav-item' + (room === item.id ? ' selected' : '')} aria-pressed={room === item.id} onClick={() => setRoom(item.id)}>{item.name}</button>)}</nav></aside>
     <main className="main-content"><header className="community-header"><div><p className="community-connection">{fresh ? 'Home Assistant 연결됨' : '연결 확인 필요'}</p><p className="text-muted">{data?.weather?.available && fresh ? `${data.weather.name} · ${data.weather.condition} · ${value(data.weather.temperatureC, 1)}°C` : '날씨는 Home Assistant 설정을 사용합니다.'}</p></div><button id="refresh" className="community-button" onClick={refresh}>새로고침</button></header>
-      {!data?.connected && <p className="notice"><a href="/auth/start">Home Assistant 연결</a><span>Mac에서 본인 Home Assistant 계정으로 연결하세요.</span></p>}
+      {!data?.connected && <p className="notice"><a href="/auth/start">Home Assistant 연결</a><span>서버에서 본인 Home Assistant 계정으로 연결하세요.</span></p>}
       {!fresh && <p className="notice" role="status">{error || '현재 상태를 확인하는 중입니다.'}{data?.updatedAt ? ` 마지막 수신 · ${time(data.updatedAt, true)}` : ''}</p>}
       {message && <p className="notice" role="status">{message}</p>}
       <PanelNotifications notifications={notifications} busy={Boolean(busy)} onDismiss={id => post('/api/notifications/dismiss', { id }, 'dismiss', false)}/>

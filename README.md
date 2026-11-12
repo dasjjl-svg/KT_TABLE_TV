@@ -1,8 +1,16 @@
 # KT_TABLE_TV · 홈 패널
 
-KT 기가지니 테이블 TV **CT1105-SB**를 **Mac mini + Home Assistant**의 리모컨 조작용 화면으로 사용하는 프로젝트입니다. Android 5.1.1용 앱, Mac 서버, 설치 도우미와 한국어 매뉴얼을 제공합니다.
+KT 기가지니 테이블 TV **CT1105-SB**를 **macOS·Linux·Windows(WSL2) + Home Assistant**의 리모컨 조작용 화면으로 사용하는 프로젝트입니다. Android 5.1.1용 앱, 서버, 운영체제별 설치 도우미와 한국어 매뉴얼을 제공합니다.
 
-**처음 설치한다면 [설치 매뉴얼](docs/INSTALL_KO.md)부터 읽어 주세요.**
+**처음 설치한다면 운영체제에 맞는 매뉴얼부터 읽어 주세요.**
+
+| 서버 환경 | 실행 방식 | 안내 |
+| --- | --- | --- |
+| macOS · Intel / Apple Silicon | 기존 `.command` 도우미 | [Mac 설치](docs/INSTALL_KO.md) |
+| Linux · Ubuntu x86_64 | `.sh` 도우미, 선택적 systemd 사용자 서비스 | [Linux 설치](docs/LINUX_KO.md) |
+| Windows 11 x64 · WSL2 Ubuntu x86_64 | WSL 미러 네트워크 + Linux 실행, PowerShell 도우미 | [Windows 설치](docs/WINDOWS_KO.md) |
+
+Windows는 WSL2 환경에서 실행합니다. Windows 네이티브 서버, Windows 10/WSL1, Linux ARM64 Android 빌드는 지원 범위에 포함하지 않습니다.
 
 ## 사용할 수 있는 기능
 
@@ -17,7 +25,7 @@ KT 기가지니 테이블 TV **CT1105-SB**를 **Mac mini + Home Assistant**의 �
 
 ```mermaid
 flowchart LR
-    HA[Home Assistant] <--> MAC[Mac mini · 패널 서버]
+    HA[Home Assistant] <--> MAC[서버 PC · 패널 서버]
     MAC <--> TV[CT1105-SB · Android 5.1.1 앱]
     REMOTE[리모컨] --> TV
 ```
@@ -26,7 +34,9 @@ flowchart LR
 
 | 문서 | 내용 |
 | --- | --- |
-| [설치 매뉴얼](docs/INSTALL_KO.md) | 준비물, Mac 설정, 앱 빌드, USB 설치, 자동 시작 |
+| [Mac·공통 기기 설치](docs/INSTALL_KO.md) | Mac 설정, 앱 빌드, USB 설치, 자동 시작 |
+| [Linux 설치](docs/LINUX_KO.md) | Ubuntu 도구, 서버·앱 빌드, systemd |
+| [Windows 설치](docs/WINDOWS_KO.md) | WSL2, LAN 연결, PowerShell 도우미 |
 | [Home Assistant 연결](docs/HOME_ASSISTANT_KO.md) | HA 설치, SmartThings·Tuya·Sonoff·LG ThinQ, 방·센서 지정 |
 | [업데이트와 문제 해결](docs/OPERATIONS_KO.md) | 실행 상태, 원격 업데이트, 기본 홈 복원, 복구 |
 | [개인정보와 재배포](docs/PRIVACY_KO.md) | 공개하면 안 되는 파일과 검사 방법 |
@@ -34,9 +44,9 @@ flowchart LR
 
 ## 지원 범위와 검증
 
-대상은 CT1105-SB의 Android 5.1.1 / SDK 22 환경과 Mac mini입니다. 기준 기기의 하드웨어 표기는 `bigfish`, 커널 표기는 `3.18.24_hi3798cv2x`였습니다. 다른 KT 모델·보드·펌웨어까지 호환된다고 보장하지 않습니다.
+단말 대상은 CT1105-SB의 Android 5.1.1 / SDK 22 환경입니다. 서버 환경은 위 지원 표를 따릅니다. 기준 기기의 하드웨어 표기는 `bigfish`, 커널 표기는 `3.18.24_hi3798cv2x`였습니다. 다른 KT 모델·보드·펌웨어까지 호환된다고 보장하지 않습니다.
 
-기존 개인 설치에서는 USB 없는 부팅, 원격 업데이트, 대기 화면과 리모컨 복귀를 확인했습니다. 이 공개판은 개인 설정을 제거하고 별도 패키지 `dev.homepanel.community`로 분리했습니다. 새로운 임시 설정에서 Android 빌드·서명 검사, HA 모의 연결과 단위 테스트를 수행했으며, **제3자의 새 기기에서 전체 설치를 실제 검증한 상태는 아닙니다.**
+기존 개인 설치에서는 USB 없는 부팅, 원격 업데이트, 대기 화면과 리모컨 복귀를 확인했습니다. 이 공개판은 개인 설정을 제거하고 별도 패키지 `dev.homepanel.community`로 분리했습니다. 새로운 임시 설정에서 Android 빌드·서명 검사, HA 모의 연결과 단위 테스트를 수행합니다. GitHub Actions에는 Linux·macOS 테스트, Linux Android 빌드, Windows PowerShell 구문·입력 검사도 포함됩니다. WSL의 실제 LAN 통신과 **제3자의 새 기기 전체 설치는 현장 확인이 필요합니다.**
 
 LineageOS 이미지나 순정 펌웨어를 배포하는 저장소가 아닙니다. 설치 과정에는 앱 설치와 기본 홈 변경이 포함되며 기존 홈 복원 메뉴를 제공합니다. USB 자동 설치 경로와 기기 서비스가 다른 펌웨어에서는 설치가 진행되지 않을 수 있습니다.
 

@@ -297,7 +297,7 @@ public final class AFactoryModeMainActivity extends Activity {
         long delay = PanelPolicy.retryDelay(attempt);
         if (attempt < 4) attempt++;
         if (!hasPanelPage && !showOfflinePage()) {
-            showMessage("서버에 연결하지 못했습니다.\nMac과 네트워크 연결을 확인해 주세요. " + (delay / 1000) + "초 후 다시 연결합니다.");
+            showMessage("서버에 연결하지 못했습니다.\n서버와 네트워크 연결을 확인해 주세요. " + (delay / 1000) + "초 후 다시 연결합니다.");
         }
         if (foreground) handler.postDelayed(retry, delay);
     }
@@ -538,7 +538,7 @@ public final class AFactoryModeMainActivity extends Activity {
 
     private void beginMaintenance() {
         MaintenanceService.start(this, true);
-        Toast.makeText(this, "Mac에서 홈 패널 설치 파일을 확인합니다. 설치 중에는 전원을 유지해 주세요.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "서버에서 홈 패널 설치 파일을 확인합니다. 설치 중에는 전원을 유지해 주세요.", Toast.LENGTH_LONG).show();
     }
 
     private void showMaintenance() {
@@ -593,7 +593,7 @@ public final class AFactoryModeMainActivity extends Activity {
         ExportCallback callback = new ExportCallback(this, "네트워크 ADB 연결 시험");
         boolean started = KtApkExport.startNetworkAdb(getApplicationContext(), callback);
         Toast.makeText(this, started
-                ? "Mac 수신기를 확인한 뒤 ADB 연결 설정을 시험합니다."
+                ? "서버 수신기를 확인한 뒤 ADB 연결 설정을 시험합니다."
                 : "이미 시험이나 파일 전송이 진행 중입니다.", Toast.LENGTH_LONG).show();
     }
 
@@ -617,7 +617,7 @@ public final class AFactoryModeMainActivity extends Activity {
     private void startSystemBackup() {
         ExportCallback callback = new ExportCallback(this, "시스템 구성·백업");
         boolean started = KtApkExport.startSystemBackup(getApplicationContext(), callback);
-        Toast.makeText(this, started ? "시스템 구성을 Mac에 보내고 백업 계획을 기다립니다. 완료될 때까지 전원을 유지해 주세요."
+        Toast.makeText(this, started ? "시스템 구성을 서버에 보내고 백업 계획을 기다립니다. 완료될 때까지 전원을 유지해 주세요."
                 : "이미 진단이나 백업이 진행 중입니다.", Toast.LENGTH_LONG).show();
     }
 

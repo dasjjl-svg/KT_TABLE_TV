@@ -238,19 +238,19 @@ public final class KtApkExport {
             if (!reportSent) {
                 message = "진단 결과 전송에 실패했습니다. 확인된 APK 전송: " + artifacts.length() + "개.\n"
                         + (expired.get() || SystemClock.elapsedRealtime() >= deadline
-                            ? "150초 제한에 도달했습니다." : "Mac 수집기와 네트워크 연결 상태를 확인해 주세요.");
+                            ? "150초 제한에 도달했습니다." : "서버 수집기와 네트워크 연결 상태를 확인해 주세요.");
             } else if (operation == Operation.ADB_SETUP) {
-                message = "네트워크 ADB 시험 결과를 Mac으로 전송했습니다.\n실제 ADB 연결 성공 여부는 Mac에서 확인합니다.";
+                message = "네트워크 ADB 시험 결과를 서버로 전송했습니다.\n실제 ADB 연결 성공 여부는 서버에서 확인합니다.";
             } else if (operation == Operation.SERVICE_INSPECTION) {
-                message = "ADB 실행 환경 진단을 Mac으로 전송했습니다.\n전송 완료는 ADB 연결이나 관리자 권한 확보를 뜻하지 않습니다.";
+                message = "ADB 실행 환경 진단을 서버로 전송했습니다.\n전송 완료는 ADB 연결이나 관리자 권한 확보를 뜻하지 않습니다.";
             } else if (!targetFound) {
-                message = "진단 결과를 Mac으로 전송했습니다. 대상 KT 앱을 확인하지 못했습니다.\n확인된 파일: 0개";
+                message = "진단 결과를 서버로 전송했습니다. 대상 KT 앱을 확인하지 못했습니다.\n확인된 파일: 0개";
             } else if (artifacts.length() == 0) {
                 message = uploadFailures > 0
-                        ? "진단 결과는 Mac으로 전송했지만 APK 파일 전송은 실패했습니다.\n확인된 파일: 0개"
-                        : "진단 결과를 Mac으로 전송했습니다. 읽을 수 있는 APK를 확보하지 못했습니다.\n확인된 파일: 0개";
+                        ? "진단 결과는 서버로 전송했지만 APK 파일 전송은 실패했습니다.\n확인된 파일: 0개"
+                        : "진단 결과를 서버로 전송했습니다. 읽을 수 있는 APK를 확보하지 못했습니다.\n확인된 파일: 0개";
             } else {
-                message = "진단 결과를 Mac으로 전송했습니다. 확인된 분석 파일: " + artifacts.length() + "개."
+                message = "진단 결과를 서버로 전송했습니다. 확인된 분석 파일: " + artifacts.length() + "개."
                         + (failures > 0 ? "\n읽기 또는 전송에 실패한 파일도 있습니다. 아래 진단을 확인해 주세요." : "");
             }
             return new Result(message, diagnostics.text());

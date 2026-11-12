@@ -148,14 +148,14 @@ final class SystemBackupExport {
                 }
                 sendInventory();
                 if (mode == Mode.SPI_READ) return result(spiSamples != null && "ok".equals(spiSamples.status)
-                        ? "SPI 읽기 진단을 Mac으로 전송했습니다.\n주소별 원본 샘플과 읽기 길이 비교 결과를 보냈습니다. 전체 백업은 수행하지 않았습니다."
-                        : "SPI 읽기 진단 결과를 Mac으로 전송했습니다.\n샘플 수집은 완료되지 않았습니다. 아래 결과를 확인해 주세요.");
-                if (mode == Mode.SPI_IDENTITY) return result("SPI 칩 식별 진단을 Mac으로 전송했습니다.\n부트로더 본문 읽기는 아직 수행하지 않았습니다. 아래에 수집 결과가 표시됩니다.");
+                        ? "SPI 읽기 진단을 서버로 전송했습니다.\n주소별 원본 샘플과 읽기 길이 비교 결과를 보냈습니다. 전체 백업은 수행하지 않았습니다."
+                        : "SPI 읽기 진단 결과를 서버로 전송했습니다.\n샘플 수집은 완료되지 않았습니다. 아래 결과를 확인해 주세요.");
+                if (mode == Mode.SPI_IDENTITY) return result("SPI 칩 식별 진단을 서버로 전송했습니다.\n부트로더 본문 읽기는 아직 수행하지 않았습니다. 아래에 수집 결과가 표시됩니다.");
                 if (mode == Mode.SPI_BACKUP) return result(spiBackup != null && "ok".equals(spiBackup.status)
-                        ? "SPI 4MiB 백업을 Mac으로 전송했습니다.\n두 번 읽은 내용과 전송 파일을 검증했습니다. 이미지 내용 분석과 복구 시험은 아직 수행하지 않았습니다."
-                        : "SPI 백업 진단을 Mac으로 전송했습니다.\n4MiB 백업은 완료되지 않았습니다. 아래 결과를 확인해 주세요.");
+                        ? "SPI 4MiB 백업을 서버로 전송했습니다.\n두 번 읽은 내용과 전송 파일을 검증했습니다. 이미지 내용 분석과 복구 시험은 아직 수행하지 않았습니다."
+                        : "SPI 백업 진단을 서버로 전송했습니다.\n4MiB 백업은 완료되지 않았습니다. 아래 결과를 확인해 주세요.");
                 JSONObject plan = awaitPlan();
-                if (plan == null) return result("시스템 구성 파일을 Mac에 백업했습니다.\n파티션 백업 계획이 없어 이미지 읽기는 시작하지 않았습니다.");
+                if (plan == null) return result("시스템 구성 파일을 서버에 백업했습니다.\n파티션 백업 계획이 없어 이미지 읽기는 시작하지 않았습니다.");
                 JSONArray partitions = validatePlan(plan, plan.getJSONArray("partitions").length() == 0 ? null : currentMap(access));
                 for (int p = 0; p < partitions.length(); p++) {
                     JSONObject part = partitions.getJSONObject(p);
@@ -196,8 +196,8 @@ final class SystemBackupExport {
                 }
                 log("source_consistency=live_non_atomic");
                 return result(partitions.length() == 0
-                        ? "시스템 구성과 읽을 수 있는 추가 파일을 Mac에 백업했습니다.\n각 파일의 수집 결과는 아래에 표시됩니다."
-                        : "시스템 구성과 지정한 파티션을 Mac에 백업했습니다.\n전송 크기와 SHA-256 검증을 마쳤습니다. 실행 중인 기기에서 읽은 백업입니다.");
+                        ? "시스템 구성과 읽을 수 있는 추가 파일을 서버에 백업했습니다.\n각 파일의 수집 결과는 아래에 표시됩니다."
+                        : "시스템 구성과 지정한 파티션을 서버에 백업했습니다.\n전송 크기와 SHA-256 검증을 마쳤습니다. 실행 중인 기기에서 읽은 백업입니다.");
             }
         } catch (Exception error) {
             log("error=" + error.getClass().getSimpleName());
@@ -207,8 +207,8 @@ final class SystemBackupExport {
                 try { sendInventory(); } catch (Exception ignored) { log("partial_inventory_upload=failed"); }
             }
             return result(inventorySent
-                    ? "수집한 시스템 구성은 Mac에 저장했습니다.\n파티션 백업은 완료되지 않았습니다. 아래 결과를 확인해 주세요."
-                    : "시스템 백업을 완료하지 못했습니다.\nMac 수신기와 아래 결과를 확인해 주세요.");
+                    ? "수집한 시스템 구성은 서버에 저장했습니다.\n파티션 백업은 완료되지 않았습니다. 아래 결과를 확인해 주세요."
+                    : "시스템 백업을 완료하지 못했습니다.\n서버 수신기와 아래 결과를 확인해 주세요.");
         } finally {
             timer.cancel();
             if (awake != null && awake.isHeld()) awake.release();

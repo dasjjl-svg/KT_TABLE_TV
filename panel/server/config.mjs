@@ -8,7 +8,7 @@ export function privateIPv4(value) {
   return a === 10 || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168;
 }
 export function validateSetup(input) {
-  if (!input || input.schema !== 1 || !privateIPv4(input.server?.address) || !privateIPv4(input.device?.address) || input.server.address === input.device.address || input.server.port !== 4173 || input.server.legacyPort !== 4181) throw new Error('Mac과 CT1105-SB의 서로 다른 사설 IPv4 주소가 필요합니다.');
+  if (!input || input.schema !== 1 || !privateIPv4(input.server?.address) || !privateIPv4(input.device?.address) || input.server.address === input.device.address || input.server.port !== 4173 || input.server.legacyPort !== 4181) throw new Error('서버와 CT1105-SB의 서로 다른 사설 IPv4 주소가 필요합니다.');
   const url = new URL(input.homeAssistant?.url);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('Home Assistant의 기본 http/https 주소를 입력하세요.');
   if (!Array.isArray(input.rooms) || input.rooms.length !== 2) throw new Error('방 이름 두 개가 필요합니다.');

@@ -4,7 +4,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import platform
 import re
 import shutil
 import stat
@@ -38,25 +37,36 @@ def fetch(url, maximum):
     return raw
 
 
-def command_tools_archive(repository):
+def command_tools_archive(repository, host_info=None):
+    selected = TOOLS.host_info() if host_info is None else host_info
     tree = ET.fromstring(repository)
     packages = [item for item in tree if item.attrib.get('path') == 'cmdline-tools;' + COMMAND_TOOLS]
     if len(packages) != 1:
         raise ValueError('Pinned Android command-line tools not found')
     archives = child(packages[0], 'archives')
+    if archives is None:
+        raise ValueError('Android command-line tools archive metadata is missing')
+    matches = []
     for archive in archives:
         host = child(archive, 'host-os')
-        if host is None or host.text != 'macosx':
+        if host is None or host.text != selected['repository']:
             continue
         complete = child(archive, 'complete')
+        if complete is None:
+            raise ValueError('Incomplete Android archive metadata')
         url, checksum, size = [child(complete, name) for name in ('url', 'checksum', 'size')]
+        if any(value is None for value in (url, checksum, size)):
+            raise ValueError('Incomplete Android archive metadata')
         algorithm = checksum.attrib.get('type', 'sha1').lower().replace('-', '')
-        if (not re.fullmatch(r'commandlinetools-mac-[0-9]+_latest\.zip', url.text or '')
-                or algorithm not in ('sha1', 'sha256') or not re.fullmatch(r'[0-9a-f]+', checksum.text or '')
-                or not 1 <= int(size.text) <= 256 * 1024 * 1024):
+        if (not re.fullmatch(r'commandlinetools-' + re.escape(selected['archive']) + r'-[0-9]+_latest\.zip', url.text or '')
+                or algorithm not in ('sha1', 'sha256')
+                or not re.fullmatch(r'[0-9a-f]{' + str(40 if algorithm == 'sha1' else 64) + r'}', checksum.text or '')
+                or not re.fullmatch(r'[0-9]+', size.text or '') or not 1 <= int(size.text) <= 256 * 1024 * 1024):
             raise ValueError('Unexpected Android archive metadata')
-        return url.text, algorithm, checksum.text, int(size.text)
-    raise ValueError('No macOS command-line tools archive')
+        matches.append((url.text, algorithm, checksum.text, int(size.text)))
+    if len(matches) != 1:
+        raise ValueError('Exactly one command-line tools archive for this host is required')
+    return matches[0]
 
 
 def unpack(archive, destination):
@@ -85,16 +95,20 @@ def unpack(archive, destination):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Install official Android SDK tools on a Mac. License acceptance remains interactive.')
+    parser = argparse.ArgumentParser(description='Install official Android SDK tools on macOS or x86_64 Linux/WSL2. License acceptance remains interactive.')
     parser.add_argument('--install', action='store_true')
     parser.add_argument('--sdk-root', type=Path)
     args = parser.parse_args()
     os.umask(0o077)
-    if platform.system() != 'Darwin':
-        parser.error('This distribution supports macOS hosts.')
+    try:
+        TOOLS.host_info()
+    except ValueError as error:
+        parser.error(str(error))
     current = TOOLS.paths()
     sdk = (args.sdk_root or current['sdk']).expanduser().absolute()
     jdk = current['jdk']
+    if not current['host_clang'].is_file() or not Path('/usr/bin/openssl').is_file():
+        parser.error('Install the host clang compiler and OpenSSL before downloading Android tools.')
     if not (jdk / 'javac').is_file():
         parser.error('Install JDK 17 or newer, then set JAVA_HOME to that JDK.')
     probe = subprocess.run([str(jdk / 'javac'), '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)

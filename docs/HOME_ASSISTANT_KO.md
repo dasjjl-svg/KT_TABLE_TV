@@ -1,10 +1,10 @@
 # Home Assistant 준비와 기기 연결
 
-이 문서는 CT1105-SB + Mac mini에서 사용할 Home Assistant(HA)를 준비하는 순서입니다. 기존 HA가 있으면 첫 번째 단계를 건너뜁니다. 계정 암호와 인증 코드는 HA 또는 해당 제조사의 로그인 화면에만 입력합니다.
+이 문서는 CT1105-SB 패널에서 사용할 Home Assistant(HA)를 준비하는 순서입니다. 기존 HA가 있으면 첫 번째 단계를 건너뜁니다. 계정 암호와 인증 코드는 HA 또는 해당 제조사의 로그인 화면에만 입력합니다.
 
-## 1. Mac mini에서 HA 준비
+## 1. HA 준비
 
-Home Assistant OS를 가상 머신으로 실행하는 구성을 사용합니다. Docker 설치는 이 프로그램의 필수 조건이 아닙니다. 가상 머신 앱과 HA OS 설치는 자동으로 수행하지 않습니다.
+기존 HA가 없다면 Home Assistant OS 가상 머신을 사용할 수 있습니다. Windows는 [공식 Windows 안내](https://www.home-assistant.io/installation/windows/), Linux는 [공식 Linux 안내](https://www.home-assistant.io/installation/linux/)를 따릅니다. Windows의 패널용 WSL과 HA OS는 별도로 준비합니다. 아래 순서는 Mac 예시입니다. Docker 설치는 이 프로그램의 필수 조건이 아닙니다. 가상 머신 앱과 HA OS 설치는 자동으로 수행하지 않습니다.
 
 1. [HA 공식 macOS 설치 안내](https://www.home-assistant.io/installation/macos/)에서 Mac의 Intel/Apple Silicon에 맞는 이미지와 가상 머신 구성을 선택합니다. 공식 문서에는 VirtualBox와 UTM 참고 경로가 있습니다.
 2. CPU 2개, RAM 2 GB 이상을 배정하고 UEFI 부팅을 사용합니다. 가상 머신 네트워크는 집 네트워크에서 접근 가능한 구성으로 설정합니다.
@@ -50,7 +50,7 @@ HA의 날씨 통합을 추가하고 `weather.*` 엔티티가 실제 집 위치�
 
 ## 8. 패널 로그인
 
-Mac에서 패널 서버를 실행한 뒤 `http://localhost:4173`을 열고 **Home Assistant 연결**을 선택합니다. 본인의 HA 로그인 화면에서 인증하면 Mac의 로컬 패널로 돌아옵니다. OAuth 인증정보는 이 설치 폴더의 비공개 `runtime/`에 저장되며 Git에는 포함하지 않습니다.
+서버에서 패널을 실행한 뒤 해당 컴퓨터의 브라우저로 `http://localhost:4173`을 열고 **Home Assistant 연결**을 선택합니다. 본인의 HA 로그인 화면에서 인증하면 로컬 패널로 돌아옵니다. Windows는 WSL 서버를 켠 상태로 Windows 브라우저에서 같은 localhost 주소를 사용합니다. OAuth 인증정보는 이 설치 폴더의 비공개 `runtime/`에 저장되며 Git에는 포함하지 않습니다.
 
 연결 후 다음을 순서대로 확인합니다.
 

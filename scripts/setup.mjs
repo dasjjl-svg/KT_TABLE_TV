@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline/promises';
 import { validateSetup, loadSetup, readPrivateJson } from '../panel/server/config.mjs';
 import { writePrivateJson } from '../panel/server/legacy-auth.mjs';
+import { checkHost } from './host-check.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fresh = () => randomBytes(32).toString('hex');
@@ -15,6 +16,8 @@ async function privateDirectory(path) {
   const info = await lstat(path);
   if (!info.isDirectory() || info.isSymbolicLink() || info.uid !== process.getuid()) throw new Error('설정 폴더가 올바르지 않습니다.');
   await chmod(path, 0o700);
+  const protectedInfo = await lstat(path);
+  if (protectedInfo.mode & 0o077) throw new Error('이 파일시스템은 비공개 폴더 권한을 적용하지 못합니다. Linux 홈 폴더 또는 macOS 볼륨을 사용하세요.');
 }
 export async function initialize(project, input) {
   const config = validateSetup(input), runtime = resolve(project, 'runtime'), legacy = resolve(runtime, 'legacy');
@@ -33,7 +36,7 @@ export async function initialize(project, input) {
 }
 
 async function main() {
-  if (Number(process.versions.node.split('.')[0]) < 22 || Number(process.versions.node.split('.')[0]) === 22 && Number(process.versions.node.split('.')[1]) < 12) throw new Error('Node.js 22.12 이상을 먼저 설치하세요.');
+  checkHost(root);
   let previous; try { previous = await loadSetup(resolve(root, 'runtime/setup.json')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const args = process.argv.slice(2), flags = {};
   for (let i = 0; i < args.length; i += 2) {
@@ -48,8 +51,8 @@ async function main() {
     return answer === '-' && optionalValue ? null : answer || current || null;
   };
   try {
-    console.log('CT1105-SB + Mac mini · 처음 연결 설정\n방 이름은 Home Assistant의 영역 이름과 똑같이 적으세요. 장면은 없어도 시작할 수 있습니다.');
-    const input = { schema: 1, homeAssistant: { url: await ask('ha-url', 'Home Assistant 주소', previous?.homeAssistant.url) }, server: { address: await ask('host', 'Mac mini 사설 IPv4 주소', previous?.server.address), port: 4173, legacyPort: 4181 }, device: { address: await ask('device', 'CT1105-SB 사설 IPv4 주소', previous?.device.address) }, rooms: [] };
+    console.log('CT1105-SB 홈 패널 · 처음 연결 설정\n방 이름은 Home Assistant의 영역 이름과 똑같이 적으세요. 장면은 없어도 시작할 수 있습니다.');
+    const input = { schema: 1, homeAssistant: { url: await ask('ha-url', 'Home Assistant 주소', previous?.homeAssistant.url) }, server: { address: await ask('host', '패널 서버 사설 IPv4 주소', previous?.server.address), port: 4173, legacyPort: 4181 }, device: { address: await ask('device', 'CT1105-SB 사설 IPv4 주소', previous?.device.address) }, rooms: [] };
     for (let i = 0; i < 2; i++) {
       const key = i ? 'two' : 'one', old = previous?.rooms[i];
       input.rooms.push({ id: i ? 'bedroom' : 'living', name: await ask('room-' + key, `방 ${i + 1} 이름`, old?.name), scenes: { on: await ask('scene-' + key + '-on', `방 ${i + 1} 켜기 장면 엔티티 ID`, old?.scenes.on, true), off: await ask('scene-' + key + '-off', `방 ${i + 1} 끄기 장면 엔티티 ID`, old?.scenes.off, true) } });
@@ -57,7 +60,7 @@ async function main() {
     const result = await initialize(root, input);
     console.log('설정 완료. 기존 인증 키는 보존하고, 첫 실행이면 새 키를 만들었습니다.');
     if (result.changedAddress) console.log('주소가 변경되었습니다. 서버를 다시 시작하고 Android 앱도 다시 빌드하세요.');
-    console.log('Start.command로 시작한 뒤 http://localhost:4173 에서 Home Assistant 연결을 누르세요.');
+    console.log('macOS는 Start.command, Linux/WSL은 Start.sh로 시작한 뒤 http://localhost:4173 에서 Home Assistant 연결을 누르세요.');
   } finally { prompt?.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message); process.exitCode = 1; });
