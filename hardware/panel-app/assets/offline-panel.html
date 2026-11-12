@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>홈 패널</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:#101010;color:#eee;font-family:sans-serif}body{padding:28px 36px}header{overflow:hidden;border-bottom:1px solid #444;padding-bottom:18px}.clock{float:left}#time{font-size:64px;line-height:1.1}#date{font-size:23px;color:#bbb;margin-top:8px}.connection{float:right;width:50%;text-align:right;font-size:21px;line-height:1.6;color:#ddd}button{font:inherit;background:#262626;border:2px solid #666;border-radius:8px;color:#eee;padding:10px 22px;margin-top:12px;min-height:52px}button:focus{outline:4px solid #fff;outline-offset:4px}.rooms{overflow:hidden;margin-top:26px}.room{float:left;width:49%;padding:24px;border:1px solid #444;border-radius:12px;background:#191919}.room+.room{margin-left:2%}h2{font-size:28px;margin:0 0 24px}.reading{display:inline-block;min-width:30%;vertical-align:top;margin-right:2%}.label{font-size:18px;color:#aaa}.value{font-size:38px;margin-top:8px}.unit{font-size:20px;color:#bbb}#received{font-size:19px;color:#ccc;margin-top:22px}#hint{font-size:18px;color:#aaa;line-height:1.5}#clock-note{font-size:16px;color:#bbb}
+</style></head><body>
+<header><div class="clock"><div id="time">--:--</div><div id="date"></div><div id="clock-note"></div></div><div class="connection">연결을 기다리고 있어요.<br>연결되면 자동으로 돌아갑니다.<br><button id="retry" type="button">다시 연결</button></div></header>
+<div class="rooms"><section class="room"><h2 id="living-name">거실</h2><div class="reading"><div class="label">온도</div><div class="value"><span id="living-temperature">--</span><span class="unit"> °C</span></div></div><div class="reading"><div class="label">습도</div><div class="value"><span id="living-humidity">--</span><span class="unit"> %</span></div></div></section>
+<section class="room"><h2 id="bedroom-name">안방</h2><div class="reading"><div class="label">온도</div><div class="value"><span id="bedroom-temperature">--</span><span class="unit"> °C</span></div></div><div class="reading"><div class="label">습도</div><div class="value"><span id="bedroom-humidity">--</span><span class="unit"> %</span></div></div><div class="reading"><div class="label">CO₂</div><div class="value"><span id="bedroom-co2">--</span><span class="unit"> ppm</span></div></div></section></div>
+<p id="received">저장된 실내환경 정보가 없습니다.</p><p id="hint">연결 전에는 기기를 조작할 수 없습니다. 표시된 수치는 현재 측정값이 아닙니다.</p>
+<script>
+/* SNAPSHOT_SCRIPT */
+(function(){
+  'use strict';
+  var storage=null,held=false;
+  try{storage=window.localStorage;}catch(ignore){}
+  var cache=createPanelSnapshotCache({storage:storage});
+  function text(id,value){document.getElementById(id).textContent=value;}
+  function pad(n){return n<10?'0'+n:String(n);}
+  function number(n,places){return typeof n==='number'&&isFinite(n)?n.toFixed(places):'--';}
+  function tick(){
+    var now=new Date(),snapshot=cache.load(),rooms=snapshot?snapshot.rooms:[],prefix=['living','bedroom'],i,j,r,date;
+    text('time',pad(now.getHours())+':'+pad(now.getMinutes()));
+    text('date',(now.getMonth()+1)+'월 '+now.getDate()+'일 '+['일요일','월요일','화요일','수요일','목요일','금요일','토요일'][now.getDay()]);
+    text('clock-note',now.getFullYear()<2020?'시간 동기화 대기':'');
+    for(i=0;i<2;i+=1){r=null;for(j=0;j<rooms.length;j+=1){if(rooms[j].id===prefix[i]){r=rooms[j];break;}}
+      text(prefix[i]+'-name',r?r.name:(i===0?'거실':'안방'));text(prefix[i]+'-temperature',number(r&&r.temperature,1));text(prefix[i]+'-humidity',number(r&&r.humidity,0));if(i===1){text('bedroom-co2',number(r&&r.co2,0));}}
+    date=snapshot?new Date(snapshot.updatedAt||snapshot.savedAt):null;
+    text('received',date&&!isNaN(date.getTime())?'마지막 수신: '+(date.getMonth()+1)+'월 '+date.getDate()+'일 '+pad(date.getHours())+':'+pad(date.getMinutes()):'저장된 실내환경 정보가 없습니다.');
+  }
+  document.getElementById('retry').onclick=function(){window.location.replace('/device/reconnect');};
+  document.addEventListener('keydown',function(e){var k=e.keyCode||e.which;if(k===13){e.preventDefault();if(!held){held=true;document.getElementById('retry').click();}}else if(k>=37&&k<=40){e.preventDefault();document.getElementById('retry').focus();}});
+  document.addEventListener('keyup',function(e){if((e.keyCode||e.which)===13){held=false;}});
+  window.addEventListener('blur',function(){held=false;});
+  tick();setInterval(tick,1000);document.getElementById('retry').focus();
+}());
+</script></body></html>
