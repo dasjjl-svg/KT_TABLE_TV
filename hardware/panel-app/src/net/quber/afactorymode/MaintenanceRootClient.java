@@ -10,7 +10,7 @@ import java.io.File;
 import org.json.JSONObject;
 
 final class MaintenanceRootClient {
-    enum Mode { STATUS, START_UPDATE, CONFIGURE_HOME, RESTORE_HOME, REPAIR_HOME }
+    enum Mode { STATUS, START_UPDATE, CONFIGURE_HOME, RESTORE_HOME, REPAIR_HOME, CONFIGURE_RETURN }
 
     static JSONObject call(Context context, Mode mode) throws Exception {
         if (context == null || mode == null) throw new IllegalArgumentException("maintenance_arguments");
@@ -36,6 +36,7 @@ final class MaintenanceRootClient {
                 : mode == Mode.START_UPDATE ? SystemBackupProtocol.Helper.MAINTENANCE_START_UPDATE
                 : mode == Mode.CONFIGURE_HOME ? SystemBackupProtocol.Helper.MAINTENANCE_CONFIGURE_HOME
                 : mode == Mode.REPAIR_HOME ? SystemBackupProtocol.Helper.MAINTENANCE_REPAIR_HOME
+                : mode == Mode.CONFIGURE_RETURN ? SystemBackupProtocol.Helper.MAINTENANCE_CONFIGURE_RETURN
                 : SystemBackupProtocol.Helper.MAINTENANCE_RESTORE_HOME;
         try (AdbNetworkSetup.BackupAccess access = AdbNetworkSetup.beginBackup(context)) {
             SystemBackupSource.Result transferred = access.maintenance(apk, helper);

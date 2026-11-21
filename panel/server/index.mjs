@@ -26,14 +26,14 @@ async function body(req) {
   return JSON.parse(Buffer.concat(parts).toString());
 }
 
-export async function createPanelServer(config, { ha: injectedHa, runtime = join(projectRoot, 'runtime'), port = 4173, dist = join(panelRoot, 'dist') } = {}) {
+export async function createPanelServer(config, { ha: injectedHa, runtime = join(projectRoot, 'runtime'), port = 4173, dist = join(panelRoot, 'dist'), sendReturn } = {}) {
   const origin = `http://localhost:${port}`, csrf = random(), catalog = sceneCatalog(config), flows = new Map();
   const ha = injectedHa || new HomeAssistant({ url: config.homeAssistant.url, dataDir: join(runtime, 'panel'), clientId: origin + '/' });
   await ha.init();
   const features = new PanelFeatures({ path: join(runtime, 'panel/features.json'), catalog });
   await features.init();
   const insights = new PanelInsights({ ha }), weekly = new WeeklyView({ weekly: new WeeklyEnvironment({ ha }) });
-  const maintenance = createPanelMaintenance({ directory: join(runtime, 'panel-maintenance') });
+  const maintenance = createPanelMaintenance({ directory: join(runtime, 'panel-maintenance'), ...(sendReturn ? { sendReturn } : {}) });
   let last = null, reading = null, readAt = 0, busy = false;
   async function dashboard(force = false) {
     if (!force && last && Date.now() - readAt < 12000) return last;
@@ -94,7 +94,7 @@ export async function createPanelServer(config, { ha: injectedHa, runtime = join
         try { await ha.exchange(url.searchParams.get('code'), flow.verifier); last = null; readAt = 0; return redirect(res, '/?auth=connected', { 'Set-Cookie': 'panel_flow=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' }); }
         catch { return redirect(res, '/?auth=failed'); }
       }
-      if (req.method === 'POST' && ['/api/scenes/run', '/api/favorites/run', '/api/favorites/settings', '/api/alert-settings', '/api/notifications/dismiss'].includes(path)) {
+      if (req.method === 'POST' && ['/api/scenes/run', '/api/favorites/run', '/api/favorites/settings', '/api/alert-settings', '/api/notifications/dismiss', '/api/panel-maintenance/return-home'].includes(path)) {
         if (busy) return json(res, 409, { error: '실행 중입니다. 완료될 때까지 기다리세요.' });
         const input = await body(req); busy = true;
         try {
@@ -103,6 +103,11 @@ export async function createPanelServer(config, { ha: injectedHa, runtime = join
           if (path === '/api/favorites/settings') await features.choose(input);
           if (path === '/api/alert-settings') await features.configure(input);
           if (path === '/api/notifications/dismiss') await features.dismiss(input);
+          if (path === '/api/panel-maintenance/return-home') {
+            if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length > 0) return json(res, 400, { error: '잘못된 복귀 요청입니다.' });
+            await maintenance.requestReturnHome();
+            return json(res, 200, { ok: true, message: '기가지니에 홈 패널 복귀 요청을 보냈습니다. 몇 초 안에 화면이 돌아오는지 확인하세요.' });
+          }
           return json(res, 200, { ok: true, message: '요청을 처리했습니다. 실제 기기 상태를 확인하세요.' });
         } finally { busy = false; }
       }

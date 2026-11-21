@@ -31,7 +31,8 @@ public final class MaintenanceRoot {
         JSONObject result;
         try {
             initialize(35000L);
-            if (args == null || args.length != 1 || !args[0].matches("status|startUpdate|configureHome|restoreHome|repairHome")) {
+            if (args == null || args.length != 1
+                    || !args[0].matches("status|startUpdate|configureHome|restoreHome|repairHome|configureReturn")) {
                 throw new IllegalArgumentException("maintenance_mode");
             }
             Context context = systemContext();
@@ -298,7 +299,8 @@ public final class MaintenanceRoot {
     static java.lang.Process launch(String classPath, String main, String... args) throws Exception {
         checkTime();
         if (!(DIRECTORY + "/helper.apk").equals(classPath) && !"/system/framework/pm.jar".equals(classPath)
-                && !"/system/framework/am.jar".equals(classPath)) throw new IllegalArgumentException("worker_classpath");
+                && !"/system/framework/am.jar".equals(classPath)
+                && !"/system/framework/settings.jar".equals(classPath)) throw new IllegalArgumentException("worker_classpath");
         String[] command = new String[3 + args.length];
         command[0] = "/system/bin/app_process32"; command[1] = "/system/bin"; command[2] = main;
         System.arraycopy(args, 0, command, 3, args.length);

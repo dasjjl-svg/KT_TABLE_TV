@@ -60,3 +60,52 @@ HA의 날씨 통합을 추가하고 `weather.*` 엔티티가 실제 집 위치�
 - CT1105-SB에서도 같은 패널이 열리고 리모컨으로 선택할 수 있습니다.
 
 HA나 제조사 로그인 실패는 해당 HA 통합에서 먼저 해결합니다. 이 프로그램은 계정 인증이나 유료 서비스 가입을 대신하지 않습니다.
+
+## 9. Home Assistant 원격 복귀·음성 연동 (선택)
+
+CT1105-SB가 실수로 KT 홈 화면으로 나갔을 때 Home Assistant 대시보드 버튼이나 음성 명령(`"홈패널로 복귀"`)으로 홈 패널을 다시 불러올 수 있습니다.
+
+1. 서버에서 `runtime/panel-maintenance/ha-return.json` 파일의 `token` 값을 확인합니다. 이 토큰은 원격 복귀 전용이며 단말 업데이트 토큰과 분리되어 있습니다. 파일 내용과 토큰은 GitHub이나 외부에 공유하지 않습니다.
+2. HA의 `secrets.yaml`에 인증 헤더를 추가합니다:
+
+```yaml
+home_panel_return_url: "http://<서버_IP>:4186/v1/return-home"
+home_panel_return_header: "Bearer REPLACE_WITH_HA_RETURN_TOKEN"
+```
+
+3. HA의 `configuration.yaml`에 `rest_command`를 등록하고 HA를 다시 불러옵니다:
+
+```yaml
+rest_command:
+  home_panel_return:
+    url: !secret home_panel_return_url
+    method: post
+    content_type: "application/json; charset=utf-8"
+    headers:
+      Authorization: !secret home_panel_return_header
+    payload: '{"source":"ha"}'
+  home_panel_return_voice:
+    url: !secret home_panel_return_url
+    method: post
+    content_type: "application/json; charset=utf-8"
+    headers:
+      Authorization: !secret home_panel_return_header
+    payload: '{"source":"voice","command":"홈패널로 복귀"}'
+```
+
+4. HA 자동화에 Assist 문장 트리거를 추가하면 음성으로 `"홈패널로 복귀"`를 말했을 때 자동으로 호출됩니다:
+
+```yaml
+alias: "홈패널로 복귀"
+trigger:
+  - platform: conversation
+    command:
+      - "홈패널로 복귀"
+      - "홈 패널로 복귀"
+      - "홈패널로 복귀해줘"
+action:
+  - service: rest_command.home_panel_return_voice
+mode: single
+```
+
+같은 네트워크(사설 IPv4 LAN)의 HA에서 호출해야 하며, 서버의 4186 포트가 실행 중이면 단말이 약 2~3초 안에 홈 패널 화면으로 복귀합니다.

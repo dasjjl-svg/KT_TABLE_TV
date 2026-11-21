@@ -14,4 +14,5 @@
 .community-rooms .room-card { min-width: 0; }
 .community-rooms h2 { font-size: 22px; margin: 0; }
 .operations-card { margin: 16px 0; }
+.maintenance-actions { margin-top: 12px; }
 @media(max-width: 760px) { .community-rooms { grid-template-columns: 1fr; } .community-readings strong { font-size: 28px; } }

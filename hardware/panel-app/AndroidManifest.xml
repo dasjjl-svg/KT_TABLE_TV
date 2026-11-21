@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="net.quber.afactorymode" android:versionCode="47" android:versionName="1.39">
+    package="net.quber.afactorymode" android:versionCode="48" android:versionName="1.40">
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="22" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -30,5 +30,15 @@
             </intent-filter>
         </receiver>
         <service android:name="net.quber.afactorymode.MaintenanceService" android:exported="false" />
+        <service android:name="net.quber.afactorymode.PanelReturnAccessibilityService"
+            android:label="@string/panel_return_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice"
+                android:resource="@xml/panel_return_accessibility" />
+        </service>
     </application>
 </manifest>

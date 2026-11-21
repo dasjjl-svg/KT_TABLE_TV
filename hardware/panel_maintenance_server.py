@@ -42,6 +42,12 @@ MAX_STARTUP_REPORT = 8192
 MAX_CRASH_REPORT = 8192
 MAX_CRASH_EVIDENCE = 4096
 MAX_RELEASE = 8192
+MAX_RETURN_HOME = 1024
+RETURN_HOME_TTL = 120
+RETURN_HOME_SOURCES = frozenset({'web', 'ha', 'voice', 'cli'})
+VOICE_WAKE_PREFIXES = ('기가지니야', '기가지니', '지니야', '헤이구글', '오케이구글', '시리야')
+VOICE_SUFFIXES = frozenset({'', '해', '해줘', '해요', '해주세요', '하자', '해라', '실행', '실행해', '실행해줘', '이동'})
+VOICE_IGNORED_PUNCTUATION = frozenset('.,!?~·\'"()[]<>-_/\\:;“”‘’')
 STARTUP_PROPERTIES = {'sys.boot_completed', 'persist.sys.qb.enable', 'persist.sys.qb.flag',
                       'persist.sys.firstboot.flag', 'ro.boot.bootreason'}
 STARTUP_PACKAGES = {'dev.homepanel.community', 'net.quber.afactorymode', 'com.kt.gigagenie.launcher'}
@@ -168,6 +174,7 @@ def initialize(runtime=RUNTIME, backup_config=BACKUP_CONFIG):
         if {'config.json', 'signing.pem', 'public.der'} <= existing:
             validate_config(BASE.strict_json(read_private(directory, 'config.json', 4096)))
             key_pair(directory)
+            ensure_ha_return_config(directory)
             return {'ok': True, 'initialized': True, 'created': False}
         if existing:
             raise ValueError('initialization requires empty private directory')
@@ -177,9 +184,104 @@ def initialize(runtime=RUNTIME, backup_config=BACKUP_CONFIG):
         write_file(directory, 'public.der', public)
         write_file(directory, 'config.json', encoded(config))
         key_pair(directory)
+        ensure_ha_return_config(directory)
         return {'ok': True, 'initialized': True, 'created': True}
     finally:
         os.close(directory)
+
+
+def matches_voice_return_command(raw):
+    if not isinstance(raw, str) or not raw or len(raw) > 96:
+        return False
+    chars = []
+    for ch in raw:
+        code = ord(ch)
+        if (code < 32 and ch not in ('\n', '\r', '\t')) or code == 127:
+            return False
+        if ch.isspace() or ch in VOICE_IGNORED_PUNCTUATION:
+            continue
+        chars.append(ch.lower())
+    text = ''.join(chars)
+    if not text or len(text) > 24:
+        return False
+    for prefix in VOICE_WAKE_PREFIXES:
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    if not text.startswith('홈패널로복귀'):
+        return False
+    return text[len('홈패널로복귀'):] in VOICE_SUFFIXES
+
+
+def validate_ha_return_config(data):
+    if not isinstance(data, dict) or set(data) != {'version', 'token'}:
+        raise ValueError('ha return config shape')
+    if type(data['version']) is not int or data['version'] != 1:
+        raise ValueError('ha return config version')
+    if not isinstance(data['token'], str) or re.fullmatch(DIGEST, data['token']) is None:
+        raise ValueError('ha return config token')
+    return dict(data)
+
+
+def ensure_ha_return_config(directory):
+    try:
+        return validate_ha_return_config(BASE.strict_json(read_private(directory, 'ha-return.json', MAX_RETURN_HOME)))
+    except FileNotFoundError:
+        value = {'version': 1, 'token': secrets.token_hex(32)}
+        write_file(directory, 'ha-return.json', encoded(value))
+        return value
+
+
+def validate_return_home_record(data):
+    keys = {'schema', 'action', 'id', 'source', 'requestedAt', 'expiresAt'}
+    if not isinstance(data, dict) or set(data) != keys:
+        raise ValueError('return home shape')
+    if type(data['schema']) is not int or data['schema'] != 1 or data['action'] != 'return_home':
+        raise ValueError('return home target')
+    if not isinstance(data['id'], str) or re.fullmatch(IDENTIFIER, data['id']) is None:
+        raise ValueError('return home id')
+    if not isinstance(data['source'], str) or data['source'] not in RETURN_HOME_SOURCES:
+        raise ValueError('return home source')
+    for field in ('requestedAt', 'expiresAt'):
+        if type(data[field]) is not int or not 1 <= data[field] <= 4102444800:
+            raise ValueError('return home timestamp')
+    if data['expiresAt'] <= data['requestedAt'] or data['expiresAt'] - data['requestedAt'] > 600:
+        raise ValueError('return home ttl')
+    return data
+
+
+def validate_return_home_request(data, allowed_sources, default_source):
+    if not isinstance(data, dict) or not set(data) <= {'source', 'command'}:
+        raise ValueError('return request shape')
+    command_text = data.get('command')
+    if 'command' in data and not matches_voice_return_command(command_text):
+        raise ValueError('return voice command mismatch')
+    inferred = 'voice' if 'command' in data and 'voice' in allowed_sources else default_source
+    source = data.get('source', inferred)
+    if not isinstance(source, str) or source not in allowed_sources:
+        raise ValueError('return request source')
+    return source, command_text
+
+
+def validate_return_home_ack(data):
+    if not isinstance(data, dict) or set(data) != {'schema', 'id'}:
+        raise ValueError('return ack shape')
+    if type(data['schema']) is not int or data['schema'] != 1:
+        raise ValueError('return ack schema')
+    if not isinstance(data['id'], str) or re.fullmatch(IDENTIFIER, data['id']) is None:
+        raise ValueError('return ack id')
+    return data['id']
+
+
+def is_private_lan_or_loopback(address):
+    try:
+        parsed = ipaddress.IPv4Address(address)
+    except ipaddress.AddressValueError:
+        return False
+    if (str(parsed) != address or parsed.is_unspecified or parsed.is_multicast
+            or parsed.is_link_local or parsed.is_reserved):
+        return False
+    return parsed.is_private or parsed.is_loopback
 
 
 def validate_payload(data):
@@ -460,6 +562,7 @@ class MaintenanceStore:
         try:
             self.root = BASE.directory_fd(self.runtime, private=True)
             key_pair(self.root)
+            self._ha_return_token = ensure_ha_return_config(self.root)['token']
             self.artifacts = BASE.private_child(self.root, 'artifacts')
             self.releases = BASE.private_child(self.root, 'releases')
         except Exception:
@@ -548,6 +651,56 @@ class MaintenanceStore:
         with self.lock:
             write_file(self.root, 'latest-crash-report.json', encoded(value), replace=True)
 
+    def ha_return_token(self):
+        return self._ha_return_token
+
+    def request_return_home(self, source='web', command=None):
+        if not isinstance(source, str) or source not in RETURN_HOME_SOURCES:
+            raise ValueError('return home source')
+        if command is not None and not matches_voice_return_command(command):
+            raise ValueError('return voice command mismatch')
+        now = int(time.time())
+        record = validate_return_home_record({
+            'schema': 1,
+            'action': 'return_home',
+            'id': secrets.token_hex(16),
+            'source': source,
+            'requestedAt': now,
+            'expiresAt': now + RETURN_HOME_TTL,
+        })
+        with self.lock:
+            write_file(self.root, 'return-home.json', encoded(record), replace=True)
+        return {'ok': True, 'request': record}
+
+    def pending_return_home(self):
+        try:
+            raw = read_private(self.root, 'return-home.json', MAX_RETURN_HOME)
+        except FileNotFoundError:
+            return None
+        record = validate_return_home_record(BASE.strict_json(raw))
+        if record['expiresAt'] <= int(time.time()):
+            return None
+        return record
+
+    def acknowledge_return_home(self, request_id):
+        if not isinstance(request_id, str) or re.fullmatch(IDENTIFIER, request_id) is None:
+            raise ValueError('return ack id')
+        with self.lock:
+            try:
+                raw = read_private(self.root, 'return-home.json', MAX_RETURN_HOME)
+            except FileNotFoundError:
+                return {'ok': True, 'cleared': False}
+            record = validate_return_home_record(BASE.strict_json(raw))
+            matched = record['id'] == request_id
+            if matched or record['expiresAt'] <= int(time.time()):
+                try:
+                    os.unlink('return-home.json', dir_fd=self.root)
+                    os.fsync(self.root)
+                except FileNotFoundError:
+                    pass
+                return {'ok': True, 'cleared': matched}
+            return {'ok': True, 'cleared': False}
+
     def status(self):
         report = None
         try:
@@ -631,6 +784,16 @@ class MaintenanceHandler(BASE.ReceiverHandler):
         return (self.trusted_request(self.server.config['device']) and value is not None and value.isascii()
                 and secrets.compare_digest(value, 'Bearer ' + self.server.config['token']))
 
+    def local_authorized(self):
+        return any(self.trusted_request(address) for address in (self.server.config['host'], '127.0.0.1'))
+
+    def ha_authorized(self):
+        value = self.single_header('Authorization')
+        return (is_private_lan_or_loopback(self.client_address[0])
+                and self.trusted_request(self.client_address[0])
+                and value is not None and value.isascii()
+                and secrets.compare_digest(value, 'Bearer ' + self.server.store.ha_return_token()))
+
     def bytes_reply(self, code, raw=b'', content_type='application/octet-stream'):
         self.close_connection = True
         self.send_response(code)
@@ -647,7 +810,7 @@ class MaintenanceHandler(BASE.ReceiverHandler):
             return self.reject(400)
         try:
             if self.path == '/internal/status':
-                if not any(self.trusted_request(address) for address in (self.server.config['host'], '127.0.0.1')):
+                if not self.local_authorized():
                     return self.reject(403)
                 return self.reply(200, self.server.store.status())
             if not self.authorized():
@@ -655,6 +818,9 @@ class MaintenanceHandler(BASE.ReceiverHandler):
             if self.path == '/v1/release':
                 release = self.server.store.release()
                 return self.reply(200, release) if release else self.bytes_reply(204)
+            if self.path == '/v1/return-home':
+                pending = self.server.store.pending_return_home()
+                return self.reply(200, pending) if pending else self.bytes_reply(204)
             match = re.fullmatch(r'/v1/apk/(' + DIGEST + ')', self.path)
             if match:
                 return self.bytes_reply(200, self.server.store.apk(match[1]))
@@ -664,31 +830,54 @@ class MaintenanceHandler(BASE.ReceiverHandler):
         except (ValueError, TypeError, UnicodeError, OSError, subprocess.SubprocessError):
             self.reject(400)
 
+    def read_json_body(self, maximum):
+        remaining = self.body_length('application/json', maximum)
+        chunks = []
+        while remaining:
+            raw = self.read_chunk(remaining)
+            chunks.append(raw)
+            remaining -= len(raw)
+        raw = b''.join(chunks)
+        if (self.server.config['token'].encode('ascii') in raw
+                or self.server.store.ha_return_token().encode('ascii') in raw):
+            raise ValueError('credential in report')
+        return BASE.strict_json(raw)
+
     def do_POST(self):
-        if not self.authorized():
-            return self.reject(403)
-        if self.path not in {'/v1/report', '/v1/home-report', '/v1/startup-report', '/v1/crash-report'}:
-            return self.reject(404)
         try:
+            if self.path == '/internal/return-home':
+                if not self.local_authorized():
+                    return self.reject(403)
+                source, command_text = validate_return_home_request(
+                    self.read_json_body(MAX_RETURN_HOME), {'web', 'cli', 'voice'}, 'web')
+                created = self.server.store.request_return_home(source, command_text)['request']
+                return self.reply(200, {'ok': True, 'id': created['id'], 'expiresAt': created['expiresAt']})
+            if self.path == '/v1/return-home':
+                if not self.ha_authorized():
+                    return self.reject(403)
+                source, command_text = validate_return_home_request(
+                    self.read_json_body(MAX_RETURN_HOME), {'ha', 'voice'}, 'ha')
+                created = self.server.store.request_return_home(source, command_text)['request']
+                return self.reply(200, {'ok': True, 'id': created['id'], 'expiresAt': created['expiresAt']})
+            if not self.authorized():
+                return self.reject(403)
+            if self.path not in {'/v1/report', '/v1/home-report', '/v1/startup-report',
+                                 '/v1/crash-report', '/v1/return-home/ack'}:
+                return self.reject(404)
             maximum = {'/v1/report': MAX_REPORT, '/v1/home-report': MAX_HOME_REPORT,
-                       '/v1/startup-report': MAX_STARTUP_REPORT, '/v1/crash-report': MAX_CRASH_REPORT}[self.path]
-            remaining = self.body_length('application/json', maximum)
-            chunks = []
-            while remaining:
-                raw = self.read_chunk(remaining)
-                chunks.append(raw)
-                remaining -= len(raw)
-            raw = b''.join(chunks)
-            if self.server.config['token'].encode('ascii') in raw:
-                raise ValueError('credential in report')
+                       '/v1/startup-report': MAX_STARTUP_REPORT, '/v1/crash-report': MAX_CRASH_REPORT,
+                       '/v1/return-home/ack': MAX_RETURN_HOME}[self.path]
+            payload = self.read_json_body(maximum)
             if self.path == '/v1/home-report':
-                self.server.store.home_report(BASE.strict_json(raw))
+                self.server.store.home_report(payload)
             elif self.path == '/v1/startup-report':
-                self.server.store.startup_report(BASE.strict_json(raw))
+                self.server.store.startup_report(payload)
             elif self.path == '/v1/crash-report':
-                self.server.store.crash_report(BASE.strict_json(raw))
+                self.server.store.crash_report(payload)
+            elif self.path == '/v1/return-home/ack':
+                self.server.store.acknowledge_return_home(validate_return_home_ack(payload))
             else:
-                self.server.store.report(BASE.strict_json(raw))
+                self.server.store.report(payload)
             self.reply(200, {'ok': True})
         except BASE.RequestRejected as error:
             self.reject(error.status)
@@ -727,6 +916,8 @@ def main(argv=None):
     publish.add_argument('apk', type=Path)
     commands.add_parser('status')
     commands.add_parser('withdraw')
+    return_home = commands.add_parser('return-home')
+    return_home.add_argument('--command')
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -734,13 +925,16 @@ def main(argv=None):
             print(json.dumps(initialize(args.runtime, args.backup_config)))
             return 0
         config = load_config(args.runtime)
-        if args.action in {'publish', 'status', 'withdraw'}:
+        if args.action in {'publish', 'status', 'withdraw', 'return-home'}:
             store = MaintenanceStore(args.runtime)
             try:
                 if args.action == 'publish':
                     result = store.publish(args.apk)
                 elif args.action == 'withdraw':
                     result = store.withdraw()
+                elif args.action == 'return-home':
+                    source = 'voice' if args.command is not None else 'cli'
+                    result = store.request_return_home(source, args.command)
                 else:
                     result = store.status()
                 print(json.dumps(result))

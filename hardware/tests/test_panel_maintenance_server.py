@@ -756,6 +756,133 @@ class MaintenanceTests(unittest.TestCase):
             store.crash_report(value)
         self.assertEqual(target.read_bytes(), b'unchanged')
 
+    def test_voice_return_command_matching_matches_policy(self):
+        for phrase in ('홈패널로 복귀', '홈패널로복귀', '홈 패널로 복귀.', '"홈패널로 복귀"',
+                       '기가지니 홈패널로 복귀', '지니야 홈 패널로 복귀해줘', '기가지니야 홈패널로 복귀해주세요',
+                       '헤이 구글 홈패널로 복귀 실행', '홈패널로 복귀 이동!'):
+            with self.subTest(accepted=phrase):
+                self.assertTrue(M.matches_voice_return_command(phrase))
+        for phrase in (None, '', '   ', 123, '홈패널', '복귀', '채널 9999',
+                       '홈패널로 복귀하는 방법 알려줘', '홈패널로 복귀\x00', '홈패널로 복귀 ' + '가' * 90):
+            with self.subTest(rejected=phrase):
+                self.assertFalse(M.matches_voice_return_command(phrase))
+
+    def test_ha_return_token_is_separate_private_and_preserved(self):
+        ha_path = self.runtime / 'ha-return.json'
+        self.assertEqual(stat.S_IMODE(ha_path.stat().st_mode), 0o600)
+        self.assertEqual(ha_path.stat().st_nlink, 1)
+        before = ha_path.read_bytes()
+        ha_token = json.loads(before)['token']
+        self.assertNotEqual(ha_token, M.load_config(self.runtime)['token'])
+        self.assertFalse(M.initialize(self.runtime, self.backup)['created'])
+        self.assertEqual(ha_path.read_bytes(), before)
+
+    def test_return_home_internal_ha_voice_poll_ack_and_expiry(self):
+        with running_server(self.runtime) as server:
+            headers = {'Content-Type': 'application/json'}
+            ha_token = server.store.ha_return_token()
+            ha_headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ha_token}
+
+            # Initially empty
+            self.assertEqual(request(server, 'GET', '/v1/return-home')[0], 204)
+
+            # Local web UI triggers return
+            code, _, raw = request(server, 'POST', '/internal/return-home',
+                                   M.encoded({'source': 'web'}),
+                                   {'Content-Type': 'application/json', 'Authorization': 'not-needed'})
+            self.assertEqual(code, 200)
+            queued = json.loads(raw)
+            self.assertTrue(queued['ok'])
+            self.assertEqual(stat.S_IMODE((self.runtime / 'return-home.json').stat().st_mode), 0o600)
+
+            # Device polls and gets the command
+            code, _, raw = request(server, 'GET', '/v1/return-home')
+            self.assertEqual(code, 200)
+            command = json.loads(raw)
+            self.assertEqual(command['id'], queued['id'])
+            self.assertEqual(command['action'], 'return_home')
+            self.assertEqual(command['source'], 'web')
+
+            # Device acknowledges; next poll is 204
+            code, _, _ = request(server, 'POST', '/v1/return-home/ack',
+                                 M.encoded({'schema': 1, 'id': queued['id']}), headers)
+            self.assertEqual(code, 200)
+            self.assertEqual(request(server, 'GET', '/v1/return-home')[0], 204)
+
+            # Home Assistant voice automation triggers return with "홈패널로 복귀"
+            code, _, raw = request(server, 'POST', '/v1/return-home',
+                                   M.encoded({'source': 'voice', 'command': '홈패널로 복귀'}), ha_headers)
+            self.assertEqual(code, 200)
+            voice_id = json.loads(raw)['id']
+            code, _, raw = request(server, 'GET', '/v1/return-home')
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(raw)['source'], 'voice')
+
+            # Stale ack for old ID does NOT clear the newer voice request
+            code, _, _ = request(server, 'POST', '/v1/return-home/ack',
+                                 M.encoded({'schema': 1, 'id': queued['id']}), headers)
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(request(server, 'GET', '/v1/return-home')[2])['id'], voice_id)
+
+            # Expiry hides stale command
+            with mock.patch.object(M.time, 'time', return_value=json.loads(raw)['expiresAt'] + 1):
+                self.assertEqual(request(server, 'GET', '/v1/return-home')[0], 204)
+
+            # Empty JSON object from HA defaults to source='ha'
+            code, _, raw = request(server, 'POST', '/v1/return-home', b'{}', ha_headers)
+            self.assertEqual(code, 200)
+            self.assertEqual(json.loads(request(server, 'GET', '/v1/return-home')[2])['source'], 'ha')
+
+    def test_return_home_enforces_separate_auth_voice_validation_and_symlinks(self):
+        with running_server(self.runtime) as server:
+            ha_token = server.store.ha_return_token()
+            ha_headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + ha_token}
+
+            # Device token cannot invoke HA endpoint; HA token cannot invoke device endpoints
+            self.assertEqual(request(server, 'POST', '/v1/return-home', b'{}',
+                                     {'Content-Type': 'application/json'})[0], 403)
+            self.assertEqual(request(server, 'GET', '/v1/return-home',
+                                     headers={'Authorization': 'Bearer ' + ha_token})[0], 403)
+            self.assertEqual(request(server, 'GET', '/v1/release',
+                                     headers={'Authorization': 'Bearer ' + ha_token})[0], 403)
+            self.assertEqual(request(server, 'POST', '/v1/return-home', b'{}',
+                                     dict(ha_headers, Origin='http://192.168.10.20'))[0], 403)
+
+            # Invalid voice phrases, extra keys, or embedded secrets are rejected
+            for payload in (
+                {'command': '다른 명령어'},
+                {'source': 'web'},
+                {'extra': 'rejected'},
+                {'command': ha_token},
+            ):
+                self.assertEqual(request(server, 'POST', '/v1/return-home',
+                                         M.encoded(payload), ha_headers)[0], 400)
+
+            # Private IP check rejects public/link-local addresses
+            self.assertTrue(M.is_private_lan_or_loopback('192.168.10.50'))
+            self.assertTrue(M.is_private_lan_or_loopback('10.0.0.5'))
+            self.assertTrue(M.is_private_lan_or_loopback('127.0.0.1'))
+            for bad_ip in ('8.8.8.8', '169.254.1.1', '0.0.0.0', '224.0.0.1', 'not-an-ip'):
+                self.assertFalse(M.is_private_lan_or_loopback(bad_ip))
+
+        # Symlink target must not be overwritten
+        store = self.store()
+        target = self.base / 'return-unrelated'
+        target.write_bytes(b'unchanged')
+        target.chmod(0o600)
+        (self.runtime / 'return-home.json').symlink_to(target)
+        with self.assertRaises(OSError):
+            store.request_return_home('cli')
+        self.assertEqual(target.read_bytes(), b'unchanged')
+
+    def test_cli_return_home_queues_and_validates_voice_command(self):
+        self.assertEqual(M.main(['--runtime', str(self.runtime), 'return-home']), 0)
+        store = self.store()
+        self.assertEqual(store.pending_return_home()['source'], 'cli')
+        self.assertEqual(M.main(['--runtime', str(self.runtime), 'return-home', '--command', '홈패널로 복귀']), 0)
+        self.assertEqual(store.pending_return_home()['source'], 'voice')
+        self.assertEqual(M.main(['--runtime', str(self.runtime), 'return-home', '--command', '거부할 명령']), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

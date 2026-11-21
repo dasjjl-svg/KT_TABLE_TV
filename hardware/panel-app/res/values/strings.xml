@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="panel_return_service_label">홈 패널 복귀 도우미</string>
+    <string name="panel_return_service_description">다른 화면에서 리모컨 9999 또는 음성 "홈패널로 복귀" 입력 시 홈 패널로 돌아옵니다.</string>
+</resources>

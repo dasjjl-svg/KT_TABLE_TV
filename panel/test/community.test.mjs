@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { once } from 'node:events';
 import { Readable } from 'node:stream';
-import { mkdtemp, mkdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
 import { initialize } from '../../scripts/setup.mjs';
@@ -67,14 +67,14 @@ test('Offline snapshot preserves custom names and numeric readings but never cre
   assert.doesNotMatch(stored, /private|csrf|scene|entity/);
 });
 
-async function backend(t) {
+async function backend(t, extraOptions = {}) {
   const directory = await temporary(t), runtime = join(directory, 'runtime'), calls = [], data = inventory();
   let broken = false;
   const ha = { url: base().homeAssistant.url, connected: false, async init() { await mkdir(join(runtime, 'panel'), { recursive: true, mode: 0o700 }); }, async exchange(code, verifier) { calls.push({ exchange: code, verifier }); this.connected = true; }, async websocket() { if (broken) throw new Error('fixture failure'); return data; }, async json() { return []; }, async request(path, init) { calls.push({ path, init }); return Response.json({}); } };
   const reserve = http.createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening'); const port = reserve.address().port; await new Promise(done => reserve.close(done));
-  const app = await createPanelServer(base(), { ha, runtime, port }); app.server.listen(port, '127.0.0.1'); await once(app.server, 'listening'); t.after(() => app.stop());
+  const app = await createPanelServer(base(), { ha, runtime, port, ...extraOptions }); app.server.listen(port, '127.0.0.1'); await once(app.server, 'listening'); t.after(() => app.stop());
   const origin = `http://localhost:${port}`;
-  return { origin, ha, calls, offline() { broken = true; }, get: path => fetch(origin + path), post: (path, body, csrf) => fetch(origin + path, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) }) };
+  return { origin, runtime, ha, calls, offline() { broken = true; }, get: path => fetch(origin + path), post: (path, body, csrf) => fetch(origin + path, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: JSON.stringify(body) }) };
 }
 test('Mocked onboarding performs local OAuth with state and PKCE then permits only configured HA scenes', async t => {
   const f = await backend(t);
@@ -121,4 +121,33 @@ test('Legacy uses configured LAN peers, fresh device session, protected assets a
   assert.equal(rejected.status, 400); assert.equal(calls.filter(call => call.init?.method === 'POST').length, 0);
   assert.equal((await request({ method: 'POST', path: '/api/scenes/run', headers: { cookie, origin, 'content-type': 'application/json', 'x-csrf-token': 'invalid' }, body: '{}' })).status, 403);
   assert.doesNotMatch(legacyPageAssets(html).script, /entityId:\s*'scene\./);
+});
+
+test('Web panel remote return-home enforces CSRF, strict JSON, private maintenance config and works even when HA is offline', async t => {
+  const sent = [];
+  const f = await backend(t, { sendReturn: async target => { sent.push(target); return { ok: true, id: 'a'.repeat(32) }; } });
+  const initial = await (await f.get('/api/dashboard')).json();
+  assert.equal(initial.connected, false);
+
+  // Missing maintenance config fails closed
+  assert.equal((await f.post('/api/panel-maintenance/return-home', {}, initial.csrfToken)).status, 502);
+  assert.equal(sent.length, 0);
+
+  // Create valid private runtime/panel-maintenance/config.json
+  const maintDir = join(f.runtime, 'panel-maintenance');
+  await mkdir(maintDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(maintDir, 'config.json'), JSON.stringify({ version: 1, host: '10.77.0.10', device: '10.77.0.20', port: 4186, token: 'b'.repeat(64) }), { mode: 0o600 });
+
+  // Invalid CSRF rejected
+  assert.equal((await f.post('/api/panel-maintenance/return-home', {}, 'wrong')).status, 403);
+  // Extra payload rejected
+  assert.equal((await f.post('/api/panel-maintenance/return-home', { extra: 1 }, initial.csrfToken)).status, 400);
+  assert.equal(sent.length, 0);
+
+  // Valid request succeeds even while HA is disconnected
+  const response = await f.post('/api/panel-maintenance/return-home', {}, initial.csrfToken);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.deepEqual(sent, [{ host: '10.77.0.10', port: 4186 }]);
 });

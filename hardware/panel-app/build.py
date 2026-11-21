@@ -337,7 +337,8 @@ def main():
          APP / 'src/net/quber/afactorymode/MaintenanceAttemptPolicy.java', APP / 'tests/MaintenanceAttemptPolicyTest.java',
          APP / 'src/net/quber/afactorymode/HomeSetupPolicy.java', APP / 'tests/HomeSetupPolicyTest.java',
          APP / 'src/net/quber/afactorymode/MaintenanceSignerPolicy.java', APP / 'tests/MaintenanceSignerPolicyTest.java',
-         APP / 'src/net/quber/afactorymode/MaintenancePathPolicy.java', APP / 'tests/MaintenancePathPolicyTest.java'])
+         APP / 'src/net/quber/afactorymode/MaintenancePathPolicy.java', APP / 'tests/MaintenancePathPolicyTest.java',
+         APP / 'src/net/quber/afactorymode/ReturnTriggerPolicy.java', APP / 'tests/ReturnTriggerPolicyTest.java'])
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.PanelPolicyTest'])
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.DeviceInitParserTest'])
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.AdbNetworkProtocolTest'])
@@ -362,6 +363,7 @@ def main():
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.HomeSetupPolicyTest'])
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.MaintenanceSignerPolicyTest'])
     run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.MaintenancePathPolicyTest', APP / 'src/net/quber/afactorymode'])
+    run([JDK / 'java', '-cp', BUILD / 'tests', 'net.quber.afactorymode.ReturnTriggerPolicyTest'])
     native_library, native_config = build_native()
     run([JDK / 'javac', '-encoding', 'UTF-8', '-source', '8', '-target', '8', '-bootclasspath', JAR,
          '-d', BUILD / 'classes', *sorted((APP / 'src').rglob('*.java')), config_source, signing_config, native_config])
@@ -386,17 +388,25 @@ def main():
         approved = uses_approved_signer(package, version)
         add_upgrade_keys(manifest.getroot(), package, version, signing_inputs)
         if package == 'net.quber.afactorymode':
-            manifest.find('application').set(android + 'label', '홈 패널 설치')
-            activity = manifest.find('application/activity')
+            application = manifest.find('application')
+            application.set(android + 'label', '홈 패널 설치')
+            activity = application.find('activity')
             activity.set(android + 'label', '홈 패널 설치')
             for intent in list(activity.findall('intent-filter')):
                 if any(category.get(android + 'name') == 'android.intent.category.HOME' for category in intent.findall('category')):
                     activity.remove(intent)
+            for service in list(application.findall('service')):
+                if service.get(android + 'name') == 'net.quber.afactorymode.PanelReturnAccessibilityService':
+                    application.remove(service)
         manifest_directory = BUILD / 'manifests' / filename
         manifest_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         variant_manifest = manifest_directory / 'AndroidManifest.xml'
         manifest.write(variant_manifest, encoding='utf-8', xml_declaration=True)
-        run([TOOLS / 'aapt', 'package', '-f', '-M', variant_manifest, '-I', JAR, '-F', BUILD / 'unsigned.apk'])
+        aapt_command = [TOOLS / 'aapt', 'package', '-f', '-M', variant_manifest]
+        if package == 'dev.homepanel.community':
+            aapt_command.extend(['-S', APP / 'res'])
+        aapt_command.extend(['-I', JAR, '-F', BUILD / 'unsigned.apk'])
+        run(aapt_command)
         with zipfile.ZipFile(BUILD / 'unsigned.apk', 'a', compression=zipfile.ZIP_DEFLATED) as apk:
             apk.write(BUILD / 'dex/classes.dex', 'classes.dex')
             apk.write(native_library, 'lib/armeabi-v7a/libhome_panel_spi.so')

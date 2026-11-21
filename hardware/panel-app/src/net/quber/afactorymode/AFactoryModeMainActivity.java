@@ -186,6 +186,7 @@ public final class AFactoryModeMainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         foreground = true;
+        PanelReturnLauncher.setForeground(true);
         web.onResume();
         if (!registered) { registerReceiver(network, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION)); registered = true; }
         if (!pageReady && !connecting) connect();
@@ -194,6 +195,7 @@ public final class AFactoryModeMainActivity extends Activity {
 
     @Override protected void onPause() {
         foreground = false;
+        PanelReturnLauncher.setForeground(false);
         cancelBackRequest();
         cancelStandbyRequest();
         handler.removeCallbacks(retry);
@@ -204,6 +206,7 @@ public final class AFactoryModeMainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        PanelReturnLauncher.setForeground(false);
         generation++;
         handler.removeCallbacksAndMessages(null);
         if (options != null) options.dismiss();
@@ -452,30 +455,39 @@ public final class AFactoryModeMainActivity extends Activity {
                         if (which == 3) startMaintenance();
                         if (which == 4) showDiagnostics();
                         if (which == 5) restoreMaintenance();
-                        if (which == 6) finish();
+                        if (which == 6) confirmClosePanel();
                     }
                 }, new Runnable() { public void run() { showOptions(); } });
     }
 
+    private void confirmClosePanel() {
+        new AlertDialog.Builder(this).setTitle("패널 닫기")
+                .setMessage("홈 패널을 닫고 다른 화면으로 이동합니다.\n다시 돌아오려면 리모컨 9999, 음성 ‘홈패널로 복귀’, 또는 웹·Home Assistant 복귀 기능을 사용하세요.")
+                .setPositiveButton("닫기", new DialogInterface.OnClickListener() {
+                    @Override public void onClick(DialogInterface dialog, int which) { finish(); }
+                }).setNegativeButton("취소", null).show();
+    }
+
     private void showDiagnostics() {
-        showMenu("고급 진단", new String[]{"돌아가기", "개발자 옵션", "홈 앱 선택창", "기본 홈 선택", "KT 앱 분석 파일 보내기",
+        showMenu("고급 진단", new String[]{"돌아가기", "개발자 옵션", "접근성 설정", "홈 앱 선택창", "기본 홈 선택", "KT 앱 분석 파일 보내기",
                 "기가지니 홈 앱 분석 파일 보내기", "USB·ADB 분석 파일 보내기", "네트워크 ADB 연결 시험", "ADB 실행 환경 확인",
                 "시스템 구성·백업", "SPI 칩 식별", "SPI 4MiB 백업", "SPI 읽기 진단"},
                 new DialogInterface.OnClickListener() {
                     @Override public void onClick(DialogInterface dialog, int which) {
                         if (which == 0) showManagement();
                         if (which == 1) openSettings(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS);
-                        if (which == 2) showHomeChooser();
-                        if (which == 3) openSettings(Settings.ACTION_HOME_SETTINGS);
-                        if (which == 4) startKtApkExport();
-                        if (which == 5) startKtApkExport(true);
-                        if (which == 6) startSettingsApkExport();
-                        if (which == 7) startNetworkAdb();
-                        if (which == 8) startServiceInspection();
-                        if (which == 9) startSystemBackup();
-                        if (which == 10) startSpiIdentity();
-                        if (which == 11) startSpiBackup();
-                        if (which == 12) startSpiSamples();
+                        if (which == 2) openSettings(Settings.ACTION_ACCESSIBILITY_SETTINGS);
+                        if (which == 3) showHomeChooser();
+                        if (which == 4) openSettings(Settings.ACTION_HOME_SETTINGS);
+                        if (which == 5) startKtApkExport();
+                        if (which == 6) startKtApkExport(true);
+                        if (which == 7) startSettingsApkExport();
+                        if (which == 8) startNetworkAdb();
+                        if (which == 9) startServiceInspection();
+                        if (which == 10) startSystemBackup();
+                        if (which == 11) startSpiIdentity();
+                        if (which == 12) startSpiBackup();
+                        if (which == 13) startSpiSamples();
                     }
                 }, new Runnable() { public void run() { showManagement(); } });
     }
@@ -547,6 +559,9 @@ public final class AFactoryModeMainActivity extends Activity {
         try { text += "\n버전: " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception ignored) { }
         text += "\n상태: " + state.getString("status", "대기") + "\n결과: " + state.getString("reason", "아직 실행하지 않음");
         text += "\n기본 홈: " + state.getString("home", "unknown");
+        if (MaintenancePolicy.PACKAGE.equals(getPackageName())) {
+            text += "\n복귀 도우미(9999·음성): " + (PanelReturnLauncher.isAccessibilityServiceEnabled(this) ? "활성" : "비활성");
+        }
         new AlertDialog.Builder(this).setTitle("관리 상태").setMessage(text).setPositiveButton("확인", null).show();
     }
 

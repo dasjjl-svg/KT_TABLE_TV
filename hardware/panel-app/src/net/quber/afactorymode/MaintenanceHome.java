@@ -9,8 +9,15 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.content.pm.ResolveInfo;
+import android.os.Binder;
+import android.os.Bundle;
+import android.os.IBinder;
 import android.os.Process;
+import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Xml;
+import java.io.File;
+import java.io.InputStream;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -29,18 +36,168 @@ final class MaintenanceHome {
 
     static JSONObject run(Context context, String mode) throws Exception {
         if (Process.myUid() != 0 || context == null
-                || !"configureHome".equals(mode) && !"restoreHome".equals(mode) && !"repairHome".equals(mode)) {
+                || !"configureHome".equals(mode) && !"restoreHome".equals(mode)
+                && !"repairHome".equals(mode) && !"configureReturn".equals(mode)) {
             throw new IllegalArgumentException("home_arguments");
         }
         MaintenanceRoot.ensureRootDirectory();
+        if ("configureReturn".equals(mode)) {
+            if (MaintenancePolicy.installedVersion(context) < 1) throw new IllegalStateException("panel_not_installed");
+            boolean enabled = enableReturnService(context);
+            JSONObject result = new JSONObject();
+            result.put("status", "ok");
+            result.put("reason", enabled ? "return_service_configured" : "return_service_unavailable");
+            result.put("home", home(context));
+            return result;
+        }
         Adapter adapter = new Adapter(context);
         MaintenanceHomePolicy.Result outcome = "repairHome".equals(mode) ? MaintenanceHomePolicy.runRepairOnly(adapter)
                 : MaintenanceHomePolicy.run(adapter, "configureHome".equals(mode));
+        if ("restoreHome".equals(mode)) {
+            disableReturnService(context);
+        } else if ("ok".equals(outcome.status)) {
+            enableReturnService(context);
+        }
         JSONObject result = new JSONObject();
         result.put("status", outcome.status);
         result.put("reason", outcome.reason);
         result.put("home", home(context));
         return result;
+    }
+
+    static boolean enableReturnService(Context context) {
+        try {
+            String current = readSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            String updated = ReturnTriggerPolicy.addAccessibilityService(current, ReturnTriggerPolicy.RETURN_SERVICE_COMPONENT);
+            if (!writeSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, updated)) return false;
+            if (!writeSecureSetting(context, Settings.Secure.ACCESSIBILITY_ENABLED, "1")) return false;
+            String verifiedServices = readSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            String verifiedEnabled = readSecureSetting(context, Settings.Secure.ACCESSIBILITY_ENABLED);
+            return ReturnTriggerPolicy.containsAccessibilityService(verifiedServices, ReturnTriggerPolicy.RETURN_SERVICE_COMPONENT)
+                    && "1".equals(verifiedEnabled);
+        } catch (Exception unavailable) {
+            return false;
+        }
+    }
+
+    static boolean disableReturnService(Context context) {
+        try {
+            String current = readSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            if (!ReturnTriggerPolicy.containsAccessibilityService(current, ReturnTriggerPolicy.RETURN_SERVICE_COMPONENT)) {
+                return true;
+            }
+            String updated = ReturnTriggerPolicy.removeAccessibilityService(current, ReturnTriggerPolicy.RETURN_SERVICE_COMPONENT);
+            if (!writeSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, updated)) return false;
+            if (updated.isEmpty()) {
+                writeSecureSetting(context, Settings.Secure.ACCESSIBILITY_ENABLED, "0");
+            }
+            String verifiedServices = readSecureSetting(context, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+            return !ReturnTriggerPolicy.containsAccessibilityService(verifiedServices, ReturnTriggerPolicy.RETURN_SERVICE_COMPONENT);
+        } catch (Exception unavailable) {
+            return false;
+        }
+    }
+
+    private static boolean allowedSecureKey(String key) {
+        return Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES.equals(key)
+                || Settings.Secure.ACCESSIBILITY_ENABLED.equals(key);
+    }
+
+    private static String readSecureSetting(Context context, String key) {
+        if (!allowedSecureKey(key)) throw new IllegalArgumentException("secure_setting_key");
+        String external = externalSettingsCall("GET_secure", key, null);
+        if (external != null) return external;
+        String cli = runSettingsCmd("get", "secure", key);
+        if (cli != null) return "null".equals(cli) ? "" : cli;
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(), key);
+            return value == null ? "" : value;
+        } catch (Exception unavailable) {
+            return "";
+        }
+    }
+
+    private static boolean writeSecureSetting(Context context, String key, String value) {
+        if (!allowedSecureKey(key) || value == null || value.length() > 2048
+                || value.indexOf('\0') >= 0 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0) {
+            throw new IllegalArgumentException("secure_setting_value");
+        }
+        if (externalSettingsCall("PUT_secure", key, value) != null) return true;
+        if (runSettingsCmd("put", "secure", key, value) != null) return true;
+        try {
+            return Settings.Secure.putString(context.getContentResolver(), key, value);
+        } catch (Exception unavailable) {
+            return false;
+        }
+    }
+
+    private static String externalSettingsCall(String method, String key, String value) {
+        Object activityManager = null;
+        IBinder token = new Binder();
+        boolean acquired = false;
+        try {
+            Class<?> nativeClass = Class.forName("android.app.ActivityManagerNative");
+            activityManager = nativeClass.getMethod("getDefault").invoke(null);
+            if (activityManager == null) return null;
+            Method getProvider = activityManager.getClass().getMethod("getContentProviderExternal",
+                    String.class, int.class, IBinder.class);
+            Object holder = getProvider.invoke(activityManager, "settings", 0, token);
+            if (holder == null) return null;
+            acquired = true;
+            Object provider = holder.getClass().getField("provider").get(holder);
+            if (provider == null) return null;
+            Bundle args = new Bundle();
+            args.putInt("_user", 0);
+            if ("PUT_secure".equals(method)) args.putString("value", value);
+            Method call = provider.getClass().getMethod("call", String.class, String.class, String.class, Bundle.class);
+            Object response = call.invoke(provider, (String) null, method, key, args);
+            if ("PUT_secure".equals(method)) return "";
+            if (response instanceof Bundle) {
+                String found = ((Bundle) response).getString("value");
+                return found == null ? "" : found;
+            }
+            return "";
+        } catch (Exception unavailable) {
+            return null;
+        } finally {
+            if (acquired && activityManager != null) {
+                try {
+                    activityManager.getClass().getMethod("removeContentProviderExternal",
+                            String.class, IBinder.class).invoke(activityManager, "settings", token);
+                } catch (Exception ignored) { }
+            }
+        }
+    }
+
+    private static String runSettingsCmd(String... args) {
+        if (!new File("/system/framework/settings.jar").isFile()) return null;
+        java.lang.Process process = null;
+        try {
+            process = MaintenanceRoot.launch("/system/framework/settings.jar",
+                    "com.android.commands.settings.SettingsCmd", args);
+            process.getOutputStream().close();
+            byte[] output;
+            try (InputStream input = process.getInputStream()) {
+                output = MaintenancePolicy.read(input, 4096);
+            }
+            long until = SystemClock.elapsedRealtime() + 5000L;
+            while (SystemClock.elapsedRealtime() < until) {
+                MaintenanceRoot.checkTime();
+                try {
+                    if (process.exitValue() == 0) {
+                        return new String(output, MaintenancePolicy.UTF8).trim();
+                    }
+                    return null;
+                } catch (IllegalThreadStateException running) {
+                    Thread.sleep(25L);
+                }
+            }
+            process.destroy();
+            return null;
+        } catch (Exception unavailable) {
+            if (process != null) process.destroy();
+            return null;
+        }
     }
 
     static String home(Context context) {

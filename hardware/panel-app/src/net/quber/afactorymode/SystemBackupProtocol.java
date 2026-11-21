@@ -9,7 +9,7 @@ public final class SystemBackupProtocol {
     public static final int MAX_BLOCK = 1048576;
     public enum Helper { BOOT_MEDIA, SPI_CONTROLLER, SPI_IDENTITY, SPI_BACKUP, SPI_READ,
         MAINTENANCE_STATUS, MAINTENANCE_START_UPDATE, MAINTENANCE_CONFIGURE_HOME, MAINTENANCE_RESTORE_HOME,
-        MAINTENANCE_REPAIR_HOME }
+        MAINTENANCE_REPAIR_HOME, MAINTENANCE_CONFIGURE_RETURN }
 
     public enum Query {
         PIPE_TEST, ROOT_STATUS, PARTITIONS, MOUNTS, MOUNTINFO, CMDLINE, CPUINFO,
@@ -107,6 +107,7 @@ public final class SystemBackupProtocol {
         if (helper == Helper.MAINTENANCE_CONFIGURE_HOME) return "configureHome";
         if (helper == Helper.MAINTENANCE_RESTORE_HOME) return "restoreHome";
         if (helper == Helper.MAINTENANCE_REPAIR_HOME) return "repairHome";
+        if (helper == Helper.MAINTENANCE_CONFIGURE_RETURN) return "configureReturn";
         return null;
     }
 

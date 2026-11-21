@@ -16,6 +16,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 
@@ -24,22 +25,33 @@ public final class MaintenanceService extends Service {
     private static final String RESTORE = "home.panel.RESTORE";
     private static final int HOME_CONFIGURATION_VERSION = 2;
     private static final int HOME_REPAIR_VERSION = 3;
+    private static final int RETURN_CONFIG_VERSION = 1;
+    private static final long RETURN_POLL_BACKGROUND_MS = 2000L;
+    private static final long RETURN_POLL_FOREGROUND_MS = 10000L;
     private final ScheduledExecutorService work = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService returnPoller = Executors.newSingleThreadScheduledExecutor();
+    private final PanelReturnVoiceReceiver voiceReceiver = new PanelReturnVoiceReceiver();
     private final ReconnectScheduler reconnect = new ReconnectScheduler(work, new Runnable() {
         @Override public void run() { tick(); }
     });
     private final BroadcastReceiver network = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            reconnect.connectionChanged(networkAvailable());
+            boolean connected = networkAvailable();
+            reconnect.connectionChanged(connected);
+            if (connected) scheduleReturnPoll(500L);
         }
     };
     private final Object operationGate = new Object();
+    private final Object returnPollGate = new Object();
     private boolean scheduled;
+    private boolean voiceRegistered;
+    private ScheduledFuture<?> nextReturnPoll;
     private boolean startupHeartbeatAttempted;
     private String startupReportInProcess = "";
     private volatile long installWaitUntil;
     private volatile String installWaitRelease = "";
     private volatile boolean bootstrapRepairRequested;
+    private volatile String lastHandledReturnId = "";
     private SharedPreferences prefs;
     private String rootStatus = "unknown", home = "unknown";
 
@@ -60,6 +72,13 @@ public final class MaintenanceService extends Service {
     @Override public void onCreate() {
         super.onCreate(); prefs = getSharedPreferences("maintenance", MODE_PRIVATE);
         registerReceiver(network, new IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION));
+        if (MaintenancePolicy.PACKAGE.equals(getPackageName())) {
+            registerReceiver(voiceReceiver, PanelReturnVoiceReceiver.intentFilter());
+            voiceRegistered = true;
+            PanelReturnLauncher.setBackgroundListener(new Runnable() {
+                @Override public void run() { scheduleReturnPoll(800L); }
+            });
+        }
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -73,7 +92,9 @@ public final class MaintenanceService extends Service {
                     record("accepted", "restore_waits_for_install");
                     return START_STICKY;
                 }
-                prefs.edit().putBoolean("enabled", false).putBoolean("homeAttempted", true).commit();
+                prefs.edit().putBoolean("enabled", false).putBoolean("homeAttempted", true)
+                        .remove("returnConfigVersion").commit();
+                cancelReturnPoll();
             }
             work.execute(new Runnable() { public void run() {
                 try {
@@ -100,14 +121,25 @@ public final class MaintenanceService extends Service {
         if (prefs.getBoolean("enabled", false) && !scheduled) {
             scheduled = true;
             work.scheduleWithFixedDelay(new Runnable() { public void run() { tick(); } }, 0, 30, TimeUnit.SECONDS);
-        } else if (SETUP.equals(action)) work.execute(new Runnable() { public void run() { tick(); } });
+            scheduleReturnPoll(1500L);
+        } else if (SETUP.equals(action)) {
+            work.execute(new Runnable() { public void run() { tick(); } });
+            scheduleReturnPoll(1500L);
+        }
         return START_STICKY;
     }
 
     @Override public IBinder onBind(Intent intent) { return null; }
     @Override public void onDestroy() {
+        PanelReturnLauncher.setBackgroundListener(null);
+        cancelReturnPoll();
         reconnect.close();
         unregisterReceiver(network);
+        if (voiceRegistered) {
+            unregisterReceiver(voiceReceiver);
+            voiceRegistered = false;
+        }
+        returnPoller.shutdownNow();
         work.shutdown();
         super.onDestroy();
     }
@@ -187,6 +219,7 @@ public final class MaintenanceService extends Service {
                 }
                 report("idle", "home_setup_verified", "");
             }
+            ensureReturnHelperConfigured();
             byte[] envelope = request("GET", "/v1/release", null, 8192, true);
             if (envelope == null) {
                 report("idle", "no_release", "");
@@ -399,10 +432,96 @@ public final class MaintenanceService extends Service {
                 .putLong("lastAt", System.currentTimeMillis()).commit();
     }
 
+    private void ensureReturnHelperConfigured() {
+        if (!MaintenancePolicy.PACKAGE.equals(getPackageName())
+                || !prefs.getBoolean("enabled", false)
+                || (prefs.getInt("returnConfigVersion", 0) >= RETURN_CONFIG_VERSION
+                        && PanelReturnLauncher.isAccessibilityServiceEnabled(this))) {
+            return;
+        }
+        try {
+            JSONObject configured = MaintenanceRootClient.call(this, MaintenanceRootClient.Mode.CONFIGURE_RETURN);
+            observe(configured);
+            if ("ok".equals(configured.optString("status"))
+                    && "return_service_configured".equals(configured.optString("reason"))) {
+                prefs.edit().putInt("returnConfigVersion", RETURN_CONFIG_VERSION).commit();
+            }
+        } catch (Exception unavailable) { }
+    }
+
+    private void cancelReturnPoll() {
+        synchronized (returnPollGate) {
+            if (nextReturnPoll != null) {
+                nextReturnPoll.cancel(false);
+                nextReturnPoll = null;
+            }
+        }
+    }
+
+    private void scheduleReturnPoll(long delayMs) {
+        if (!MaintenancePolicy.PACKAGE.equals(getPackageName()) || reconnect.isClosed()
+                || prefs == null || !prefs.getBoolean("enabled", false)) {
+            return;
+        }
+        synchronized (returnPollGate) {
+            if (returnPoller.isShutdown()) return;
+            if (nextReturnPoll != null) nextReturnPoll.cancel(false);
+            try {
+                nextReturnPoll = returnPoller.schedule(new Runnable() {
+                    @Override public void run() { pollReturnHome(); }
+                }, Math.max(250L, delayMs), TimeUnit.MILLISECONDS);
+            } catch (RuntimeException rejected) {
+                nextReturnPoll = null;
+            }
+        }
+    }
+
+    private void pollReturnHome() {
+        if (!MaintenancePolicy.PACKAGE.equals(getPackageName()) || reconnect.isClosed()
+                || prefs == null || !prefs.getBoolean("enabled", false)) {
+            return;
+        }
+        try {
+            if (networkAvailable()) {
+                byte[] raw = request("GET", "/v1/return-home", null, 1024, true, 2500, 2500);
+                if (raw != null) {
+                    JSONObject command = new JSONObject(new String(raw, MaintenancePolicy.UTF8));
+                    int schema = command.optInt("schema", -1);
+                    String action = command.optString("action", "");
+                    String id = command.optString("id", "");
+                    String source = command.optString("source", "");
+                    long expiresAt = command.optLong("expiresAt", -1L);
+                    if (ReturnTriggerPolicy.validReturnRequest(schema, action, id, source, expiresAt)) {
+                        if (!id.equals(lastHandledReturnId)) {
+                            lastHandledReturnId = id;
+                            PanelReturnLauncher.bringToFront(this, "remote_" + source, true);
+                        }
+                        JSONObject ack = new JSONObject();
+                        ack.put("schema", 1);
+                        ack.put("id", id);
+                        try {
+                            request("POST", "/v1/return-home/ack", ack.toString().getBytes(MaintenancePolicy.UTF8),
+                                    512, false, 2500, 2500);
+                        } catch (Exception ignored) { }
+                    }
+                }
+            }
+        } catch (Exception unavailable) {
+        } finally {
+            long delay = PanelReturnLauncher.isForeground() ? RETURN_POLL_FOREGROUND_MS : RETURN_POLL_BACKGROUND_MS;
+            scheduleReturnPoll(delay);
+        }
+    }
+
     private byte[] request(String method, String path, byte[] body, int maximum, boolean allowEmpty) throws Exception {
+        return request(method, path, body, maximum, allowEmpty, 5000, 10000);
+    }
+
+    private byte[] request(String method, String path, byte[] body, int maximum, boolean allowEmpty,
+            int connectTimeout, int readTimeout) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(PanelBuildConfig.MAINTENANCE_ORIGIN + path).openConnection(java.net.Proxy.NO_PROXY);
         connection.setInstanceFollowRedirects(false);
-        connection.setConnectTimeout(5000); connection.setReadTimeout(10000); connection.setUseCaches(false);
+        connection.setConnectTimeout(connectTimeout); connection.setReadTimeout(readTimeout); connection.setUseCaches(false);
         connection.setRequestMethod(method);
         connection.setRequestProperty("Authorization", "Bearer " + PanelBuildConfig.MAINTENANCE_TOKEN);
         connection.setRequestProperty("Accept-Encoding", "identity");

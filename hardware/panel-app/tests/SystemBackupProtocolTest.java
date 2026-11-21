@@ -132,14 +132,15 @@ public final class SystemBackupProtocolTest {
             for (SystemBackupProtocol.Helper helper : new SystemBackupProtocol.Helper[]{
                     SystemBackupProtocol.Helper.MAINTENANCE_STATUS, SystemBackupProtocol.Helper.MAINTENANCE_START_UPDATE,
                     SystemBackupProtocol.Helper.MAINTENANCE_CONFIGURE_HOME, SystemBackupProtocol.Helper.MAINTENANCE_RESTORE_HOME,
-                    SystemBackupProtocol.Helper.MAINTENANCE_REPAIR_HOME}) {
+                    SystemBackupProtocol.Helper.MAINTENANCE_REPAIR_HOME, SystemBackupProtocol.Helper.MAINTENANCE_CONFIGURE_RETURN}) {
                 for (String selectedApk : new String[]{apk, "/data/app/dev.homepanel.community-2/base.apk"}) {
                     String maintenance = wire(SystemBackupProtocol.rootProbe(selectedApk, NONCE, 1234, 21, helper));
                     commandChecks(maintenance);
                     check(maintenance.contains("PANEL_REQUEST_NONCE=" + NONCE), "maintenance_nonce");
                     String mode = SystemBackupProtocol.maintenanceMode(helper);
-                    check(mode.matches("status|startUpdate|configureHome|restoreHome|repairHome"), "maintenance_fixed_mode");
+                    check(mode.matches("status|startUpdate|configureHome|restoreHome|repairHome|configureReturn"), "maintenance_fixed_mode");
                     if (helper == SystemBackupProtocol.Helper.MAINTENANCE_REPAIR_HOME) expect("repairHome", mode);
+                    if (helper == SystemBackupProtocol.Helper.MAINTENANCE_CONFIGURE_RETURN) expect("configureReturn", mode);
                     maintenance = maintenance.replace("/system/bin/app_process32", "helper_fixture");
                     String fixed = "helper_fixture(){ [ \"$CLASSPATH\" = " + selectedApk + " ]||return 5;"
                             + "[ \"$PANEL_REQUEST_NONCE\" = " + NONCE + " ]||return 6;"
