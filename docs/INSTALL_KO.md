@@ -62,7 +62,7 @@ Finder에서 `Setup.command`를 열어도 됩니다. 실행 권한 문제라면 
 
 JDK 인식이 안 되면 설치된 JDK 17 이상을 `JAVA_HOME`에 지정한 터미널에서 다시 실행합니다. SDK 도구 위치는 `runtime/android-toolchain.json`에 저장합니다. 공개 소스에 로컬 경로를 써 넣지 않습니다.
 
-앱 서명에는 기기 호환용 AOSP 공개 테스트 키도 사용됩니다. 이것은 비밀 인증 수단이 아닙니다. 서버 업데이트의 별도 서명키와 연결 토큰은 설치마다 새로 만듭니다. 자세한 출처는 [외부 구성요소](../THIRD_PARTY_NOTICES.md)에 있습니다.
+`SmartFactory.apk`와 `HomePanel.apk` 모두 부팅 시 기기의 앱 서명 검증을 통과할 수 있도록 AOSP Android 5.1.1 공개 플랫폼 테스트 키(`platform.x509.pem`, API 22 v1 JAR 서명)로 서명합니다. 이 공개 테스트 키는 비밀 인증 수단이 아니며, 원격 업데이트 승인에는 설치마다 새로 만드는 별도 RSA 서명키와 연결 토큰을 사용합니다. 자세한 출처는 [외부 구성요소](../THIRD_PARTY_NOTICES.md)에 있습니다.
 
 ## 4. 설치할 앱 등록과 서버 실행
 

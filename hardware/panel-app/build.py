@@ -27,7 +27,20 @@ SIGNING = ROOT / 'runtime/usb-probe-signing'
 TRANSITION = ROOT / 'runtime/panel-signing-transition'
 NATIVE_TOOLS = PATHS['native']
 APPROVED_CERT_SHA256 = 'c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8'
+APPROVED_CERT_SHA1 = '27196e386b875e76adf700e7ea84e4c6eee33dfa'
 APPROVED_SPKI_SHA256 = '3d3df7dc9bf26e02d4cd76256d41d45e41a4dedebe7feb95c40e3697681be8a7'
+MANAGED_APPROVED_FIRST_VERSION = 40
+BOOTSTRAP_APPROVED_FIRST_VERSION = 47
+
+
+def uses_approved_signer(package, version):
+    if type(version) is not int or version <= 0:
+        raise ValueError('APK versionCode must be a positive integer')
+    if package == 'dev.homepanel.community':
+        return version >= MANAGED_APPROVED_FIRST_VERSION
+    if package == 'net.quber.afactorymode':
+        return version >= BOOTSTRAP_APPROVED_FIRST_VERSION
+    raise ValueError('Unexpected Android package name')
 
 
 def run(args):
@@ -370,7 +383,7 @@ def main():
             current = manifest.getroot().get(android + 'versionName').split('.')
             manifest.getroot().set(android + 'versionName', current[0] + '.' + str(int(current[1]) + 1))
         version = int(manifest.getroot().get(android + 'versionCode'))
-        approved = package == 'dev.homepanel.community' and version >= 40
+        approved = uses_approved_signer(package, version)
         add_upgrade_keys(manifest.getroot(), package, version, signing_inputs)
         if package == 'net.quber.afactorymode':
             manifest.find('application').set(android + 'label', '홈 패널 설치')
@@ -402,10 +415,13 @@ def main():
              '--out', output, BUILD / 'aligned.apk'])
         output.chmod(0o600)
         verification = checked_output([JDK / 'java', '-jar', APK_SIGNER, 'verify', '--verbose',
-                                       '--print-certs', '--min-sdk-version', '21', output]).decode('utf-8')
+                                       '--print-certs', '--min-sdk-version', '21', '--max-sdk-version', '22', output]).decode('utf-8')
         certificates = re.findall(r'^Signer #[0-9]+ certificate SHA-256 digest: ([0-9a-f]+)$', verification, re.MULTILINE)
+        sha1_digests = re.findall(r'^Signer #[0-9]+ certificate SHA-1 digest: ([0-9a-f]+)$', verification, re.MULTILINE)
         expected_certificate = APPROVED_CERT_SHA256 if approved else recipient_identity['bootstrapCertificateSha256']
-        if certificates != [expected_certificate] or 'Verified using v1 scheme (JAR signing): true' not in verification:
+        if (certificates != [expected_certificate]
+                or (approved and sha1_digests != [APPROVED_CERT_SHA1])
+                or 'Verified using v1 scheme (JAR signing): true' not in verification):
             raise ValueError('Final APK signer or legacy signature mismatch')
         run([TOOLS / 'aapt', 'dump', 'badging', output])
         output.with_suffix('.apk.sha256').write_text(hashlib.sha256(output.read_bytes()).hexdigest() + '  ' + filename + '\n')

@@ -49,7 +49,7 @@ python3 hardware/panel_recovery.py prepare --source-sha SHA256 --installed-versi
 | 설치 도우미는 열리지만 설치 안 됨 | 서버에 HomePanel.apk를 publish했는지, 4186 서버, 같은 설치의 키·설정인지 |
 | `backup_preconditions` 또는 보안 조건 오류 | USB 디버깅이 켜져 있는지, 해당 펌웨어의 제조사 서비스가 검토된 파일과 일치하는지 |
 | USB를 빼면 KT 홈이 뜸 | 설치된 앱에서 두 번째 ‘기본 홈·자동 시작 설정’을 승인했는지 |
-| ‘시스템 유효성 검사’ 뒤 재부팅 | 반복 설치·초기화하지 말고 앱 버전과 화면 상태 기록. 펌웨어별 검사 차이 조사 필요 |
+| ‘시스템 유효성 검사’ 뒤 재부팅 | v47(`1.39`) 이상에서 다시 빌드한 `SmartFactory.apk`·`HomePanel.apk`(둘 다 AOSP 공개 플랫폼 키 서명)로 설치했는지 확인. 그래도 반복되면 초기화하지 말고 앱 버전·펌웨어 버전과 화면 상태를 기록해 해당 펌웨어의 허용 서명 목록 차이를 확인 |
 | verify-install이 실패 | 최근 2분 안의 단말 관리 보고, 기본 홈 panel, rootStatus ok, 설치 버전·등록 APK 일치 |
 | 전원 복구 후 서버 서버가 안 뜸 | 사용자 로그인/FileVault, 외장 SSD 마운트, HA 가상 머신 실행 상태 |
 

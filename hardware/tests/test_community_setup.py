@@ -1,3 +1,4 @@
+import base64
 import importlib.util
 import io
 import json
@@ -9,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest import mock
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -24,6 +26,7 @@ def load(name, relative):
 
 S = load('community_setup_test', 'scripts/android_setup.py')
 T = load('community_tools_test', 'scripts/android_tools.py')
+B = load('community_build_test', 'hardware/panel-app/build.py')
 
 
 class SetupTests(unittest.TestCase):
@@ -80,6 +83,19 @@ class SetupTests(unittest.TestCase):
         self.assertIn('/refs/tags/android-5.1.1_r38/', S.AOSP)
         self.assertEqual(set(S.PUBLIC_SIGNING_FILES), {'platform.pk8', 'platform.x509.pem'})
         self.assertTrue(all(len(value) == 64 for value in S.PUBLIC_SIGNING_FILES.values()))
+
+    def test_current_manifest_signs_both_apks_with_approved_aosp_platform_key(self):
+        android = '{http://schemas.android.com/apk/res/android}'
+        version = int(ET.parse(ROOT / 'hardware/panel-app/AndroidManifest.xml').getroot().get(android + 'versionCode'))
+        self.assertGreaterEqual(version, B.BOOTSTRAP_APPROVED_FIRST_VERSION)
+        self.assertTrue(B.uses_approved_signer('net.quber.afactorymode', version))
+        self.assertTrue(B.uses_approved_signer('dev.homepanel.community', version))
+        self.assertFalse(B.uses_approved_signer('net.quber.afactorymode', B.BOOTSTRAP_APPROVED_FIRST_VERSION - 1))
+        self.assertFalse(B.uses_approved_signer('dev.homepanel.community', B.MANAGED_APPROVED_FIRST_VERSION - 1))
+        self.assertEqual(base64.b64encode(bytes.fromhex(B.APPROVED_CERT_SHA1)).decode('ascii'), 'JxluOGuHXnat9wDn6oTkxu7jPfo=')
+        for bad_package, bad_version in (('com.example.other', 47), ('net.quber.afactorymode', 0), ('dev.homepanel.community', True)):
+            with self.subTest(package=bad_package, version=bad_version), self.assertRaises(ValueError):
+                B.uses_approved_signer(bad_package, bad_version)
 
 
 class ToolArchiveTests(unittest.TestCase):
