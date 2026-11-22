@@ -67,9 +67,36 @@ python3 hardware/panel_recovery.py prepare --source-sha SHA256 --installed-versi
 | 설치 도우미는 열리지만 설치 안 됨 | 서버에 HomePanel.apk를 publish했는지, 4186 서버, 같은 설치의 키·설정인지 |
 | `backup_preconditions` 또는 보안 조건 오류 | USB 디버깅이 켜져 있는지, 해당 펌웨어의 제조사 서비스가 검토된 파일과 일치하는지 |
 | USB를 빼면 KT 홈이 뜸 | 설치된 앱에서 두 번째 ‘기본 홈·자동 시작 설정’을 승인했는지 |
-| ‘시스템 유효성 검사’ 뒤 재부팅 | v47(`1.39`) 이상에서 다시 빌드한 `SmartFactory.apk`·`HomePanel.apk`(둘 다 AOSP 공개 플랫폼 키 서명)로 설치했는지 확인. 그래도 반복되면 초기화하지 말고 앱 버전·펌웨어 버전과 화면 상태를 기록해 해당 펌웨어의 허용 서명 목록 차이를 확인 |
+| ‘시스템 유효성 검사’ 뒤 재부팅 | v47(`1.39`) 이상에서 다시 빌드한 `SmartFactory.apk`·`HomePanel.apk`(둘 다 AOSP 공개 플랫폼 키 서명)로 설치했는지 확인. **별도로 설치한 서드파티 앱(Projectivy 등)** 이 원인이라면 아래 [서드파티 APK 재서명](#서드파티-apk-설치-시-시스템-유효성-검사-해결-projectivy-등) 절차로 AOSP 플랫폼 키 v1 재서명 후 설치 |
 | verify-install이 실패 | 최근 2분 안의 단말 관리 보고, 기본 홈 panel, rootStatus ok, 설치 버전·등록 APK 일치 |
 | 전원 복구 후 서버 서버가 안 뜸 | 사용자 로그인/FileVault, 외장 SSD 마운트, HA 가상 머신 실행 상태 |
+
+## 서드파티 APK 설치 시 ‘시스템 유효성 검사’ 해결 (Projectivy 등)
+
+순정 CT1105-SB에서 홈 패널 외에 **Projectivy Launcher** 같은 서드파티 APK를 직접 설치하면, USB(`SmartFactory.apk`)를 꽂아 둔 상태나 인터넷 연결 전에는 잘 동작하다가 **USB를 뽑고 인터넷이 연결되는 순간** ‘시스템 유효성 검사 / 유효성을 검사 중 오류가 발생하여 다시 시작 됩니다.’ 화면이 뜨며 해당 앱이 삭제되고 재부팅됩니다.
+
+원인은 KT 순정 시스템 앱 `KTFirmwareUpdate`(`com.kt.gigagenie.upgrade`)의 동작 방식입니다.
+
+- USB에 `SmartFactory.apk`가 있으면 `KTFirmwareUpdate`가 시작되지 않습니다.
+- USB를 뽑고 재부팅한 뒤 인터넷이 연결되면 `KTFirmwareUpdate`가 시스템 앱이 아닌 모든 설치 앱(`/data/app`)의 서명 인증서 SHA-1을 허용 목록(6개)과 대조하고, 목록에 없는 개발자 원본 서명 APK를 즉시 삭제한 뒤 재부팅합니다.
+- 이 허용 목록에는 **AOSP 5.1.1 공개 `platform` 테스트 키**(`SHA-1: 27196e386b875e76adf700e7ea84e4c6eee33dfa`, Base64 `JxluOGuHXnat9wDn6oTkxu7jPfo=`)가 포함되어 있습니다. `HomePanel.apk`가 통과하는 이유도 이 키로 v1 JAR 서명되어 있기 때문입니다.
+
+따라서 **순정 펌웨어를 전혀 건드리지 않고** 서드파티 APK를 유지하려면, 설치 전에 APK를 AOSP 5.1.1 공개 `platform` 키로 **v1 JAR 재서명**하면 됩니다.
+
+```sh
+python3 scripts/sign-apk.py /경로/Projectivy.apk
+```
+
+- 기본 출력 파일은 같은 폴더의 `Projectivy-kt-signed.apk`입니다(`-o 출력경로.apk`로 변경 가능).
+- 이미 `Build-Android`를 마쳤다면 `runtime/panel-signing-transition/`의 AOSP 공개 플랫폼 키를 자동으로 사용합니다. 키가 아직 없다면 `--fetch-key` 옵션을 붙이면 AOSP 공식 저장소에서 체크섬 검증 후 내려받습니다.
+- 스크립트는 Kotlin/AndroidX 앱 실행에 필요한 `META-INF/services/*` 등은 유지한 채 기존 서명 파일(`MANIFEST.MF`, `*.SF`, `*.RSA` 등)만 제거하고 `zipalign -p 4`와 API 22 v1 전용 재서명·서명 검증을 수행합니다. 또한 `minSdkVersion > 22`, 32비트 ARM(`armeabi-v7a`) 미포함, `android:sharedUserId` 선언 APK를 사전에 검사합니다.
+
+설치 시 주의할 점:
+
+1. **기존 원본 서명 앱이 아직 남아 있다면 먼저 삭제**한 뒤 재서명된 `*-kt-signed.apk`를 설치합니다(서명이 달라 덮어쓰기 설치가 실패합니다. 이미 유효성 검사로 삭제됐다면 바로 설치할 수 있습니다).
+2. **앱 내부 자동 업데이트나 외부 스토어 업데이트는 사용하지 않습니다.** 새 버전이 원본 개발자 서명으로 설치되면 다음 인터넷 연결 시 다시 유효성 검사에 걸립니다. 업데이트할 때도 새 APK를 `sign-apk.py`로 재서명해 설치합니다.
+3. **Android 5.1.1(API 22)·`armeabi-v7a` 호환 버전**의 단일(universal) APK를 사용합니다. 서명이 바뀌므로 Google Play 기반 유료 라이선스 인증은 동작하지 않습니다.
+4. **Projectivy 등을 기본 홈 런처로 쓰려는 경우**: 홈 패널의 **기본 홈·자동 시작 설정**이 KT `GreetingActivity`를 비활성화하므로 재서명된 런처를 홈 후보로 띄울 수 있습니다. 다만 홈 패널을 그대로 켜 둔 채 부팅 시 다른 런처만 바로 띄우고 싶다면, 홈 패널의 부팅 자동 실행(`PanelBootReceiver`)이 홈 패널을 앞으로 띄울 수 있으므로 홈 패널 메뉴에서 실행하거나 `PanelBootReceiver` 동작을 용도에 맞게 조정합니다.
 
 고급 진단·백업 메뉴는 일반 설치에 필요하지 않습니다. 이 경로의 원본 파일, 기기 식별번호와 로그는 개인 자료로 취급합니다. 이슈에는 본인 주소·토큰·일련번호를 제외한 모델, 앱 버전, 단계와 오류 종류만 적습니다.
 
